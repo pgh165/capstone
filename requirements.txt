@@ -1,0 +1,9 @@
+opencv-python>=4.8.0
+mediapipe>=0.10.0
+pymysql>=1.1.0
+numpy>=1.24.0
+
+# Raspberry Pi 전용 (데스크탑에서는 설치 불필요)
+# pyserial>=3.5
+# Adafruit-DHT>=1.4.0
+# RPi.GPIO>=0.7.0
