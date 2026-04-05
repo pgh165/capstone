@@ -2,6 +2,7 @@
 고개 기울기 추정 모듈
 - solvePnP를 이용한 Head Pose Estimation
 - Pitch (고개 숙임), Yaw (좌우 회전), Roll (기울임) 추정
+- 이전 프레임 결과를 초기값으로 활용하여 수렴 가속
 """
 
 import numpy as np
@@ -11,6 +12,21 @@ import os
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config
+
+
+def _lerp_score(value, breakpoints):
+    """구간별 선형 보간으로 점수를 산출한다."""
+    if value <= breakpoints[0][0]:
+        return breakpoints[0][1]
+    if value >= breakpoints[-1][0]:
+        return breakpoints[-1][1]
+    for i in range(len(breakpoints) - 1):
+        x0, y0 = breakpoints[i]
+        x1, y1 = breakpoints[i + 1]
+        if value <= x1:
+            t = (value - x0) / (x1 - x0)
+            return y0 + t * (y1 - y0)
+    return breakpoints[-1][1]
 
 
 class HeadPoseEstimator:
@@ -27,6 +43,10 @@ class HeadPoseEstimator:
 
         self.camera_matrix = None
         self.dist_coeffs = np.zeros((4, 1), dtype=np.float64)
+
+        # 이전 프레임의 회전/이동 벡터 (초기값 재활용)
+        self._prev_rvec = None
+        self._prev_tvec = None
 
     def _get_camera_matrix(self, frame_shape):
         """카메라 내부 파라미터 행렬 생성"""
@@ -53,16 +73,33 @@ class HeadPoseEstimator:
 
         image_points = face_points.reshape(-1, 2)
 
-        success, rotation_vector, translation_vector = cv2.solvePnP(
-            self.model_points,
-            image_points,
-            self.camera_matrix,
-            self.dist_coeffs,
-            flags=cv2.SOLVEPNP_ITERATIVE
-        )
+        # 이전 프레임 결과를 초기값으로 활용 → 수렴 속도 향상
+        if self._prev_rvec is not None:
+            success, rotation_vector, translation_vector = cv2.solvePnP(
+                self.model_points,
+                image_points,
+                self.camera_matrix,
+                self.dist_coeffs,
+                rvec=self._prev_rvec.copy(),
+                tvec=self._prev_tvec.copy(),
+                useExtrinsicGuess=True,
+                flags=cv2.SOLVEPNP_ITERATIVE
+            )
+        else:
+            success, rotation_vector, translation_vector = cv2.solvePnP(
+                self.model_points,
+                image_points,
+                self.camera_matrix,
+                self.dist_coeffs,
+                flags=cv2.SOLVEPNP_ITERATIVE
+            )
 
         if not success:
             return 0.0, 0.0, 0.0
+
+        # 다음 프레임의 초기값으로 저장
+        self._prev_rvec = rotation_vector
+        self._prev_tvec = translation_vector
 
         # 회전 벡터 → 회전 행렬 → 오일러 각도
         rotation_matrix, _ = cv2.Rodrigues(rotation_vector)
@@ -77,39 +114,25 @@ class HeadPoseEstimator:
 
     def get_head_score(self, pitch, yaw, roll):
         """
-        Head Pose 기반 졸음 점수 산출 (0~100)
-        - pitch < -15: 고개 숙임 → 높은 점수
-        - |yaw| > 30: 고개 돌림 → 중간 점수
-        - |roll| > 20: 고개 기울임 → 중간 점수
+        Head Pose 기반 졸음 점수 산출 (0~100, 연속 보간)
+        - pitch < 0: 고개 숙임 → 높은 점수
+        - |yaw| 큼: 고개 돌림 → 중간 점수
+        - |roll| 큼: 고개 기울임 → 중간 점수
         """
-        score = 0
-
         # Pitch 점수 (고개 숙임이 가장 중요)
-        if pitch < -30:
-            score += 60
-        elif pitch < -20:
-            score += 45
-        elif pitch < -15:
-            score += 30
-        elif pitch < -10:
-            score += 15
+        pitch_score = _lerp_score(-pitch, [
+            (0, 0), (10, 10), (15, 25), (20, 40),
+            (30, 60), (45, 80), (60, 100),
+        ])
 
         # Yaw 점수 (좌우 돌림)
-        abs_yaw = abs(yaw)
-        if abs_yaw > 45:
-            score += 25
-        elif abs_yaw > 30:
-            score += 15
-        elif abs_yaw > 20:
-            score += 5
+        yaw_score = _lerp_score(abs(yaw), [
+            (0, 0), (20, 5), (30, 15), (45, 25), (60, 35),
+        ])
 
         # Roll 점수 (좌우 기울임)
-        abs_roll = abs(roll)
-        if abs_roll > 30:
-            score += 25
-        elif abs_roll > 20:
-            score += 15
-        elif abs_roll > 10:
-            score += 5
+        roll_score = _lerp_score(abs(roll), [
+            (0, 0), (10, 5), (20, 15), (30, 25), (45, 35),
+        ])
 
-        return min(100, score)
+        return min(100, pitch_score + yaw_score + roll_score)

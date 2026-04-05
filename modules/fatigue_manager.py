@@ -3,6 +3,7 @@
 
 연속 작업 시간, 졸음 감지 빈도, 환경 스트레스를 추적하여
 누적 피로도를 산출하고 피로 해소 가이드 종류를 추천한다.
+선형 보간으로 부드러운 점수 전환을 구현한다.
 """
 
 import sys
@@ -12,6 +13,21 @@ from collections import deque
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import config
+
+
+def _lerp_score(value, breakpoints):
+    """구간별 선형 보간으로 점수를 산출한다."""
+    if value <= breakpoints[0][0]:
+        return breakpoints[0][1]
+    if value >= breakpoints[-1][0]:
+        return breakpoints[-1][1]
+    for i in range(len(breakpoints) - 1):
+        x0, y0 = breakpoints[i]
+        x1, y1 = breakpoints[i + 1]
+        if value <= x1:
+            t = (value - x0) / (x1 - x0)
+            return y0 + t * (y1 - y0)
+    return breakpoints[-1][1]
 
 
 class FatigueManager:
@@ -31,7 +47,7 @@ class FatigueManager:
         self._temp_stress_start = None   # 온도 >= 26C 시작 시각
         self._humid_stress_start = None  # 습도 >= 70% 시작 시각
 
-        # 환경 스트레스 지속 시간 임계값 (초)
+        # 환경 스트레스 지속시간 임계값 (초)
         self._env_stress_duration = config.ENV_STRESS_DURATION  # 10분
 
         # 피로도 가중치
@@ -79,7 +95,7 @@ class FatigueManager:
         # 자연 회복 처리 (정상 상태 지속 시 피로도 자연 감소)
         self._update_natural_recovery(alert_level, now)
 
-        # 피로도 점수 계산
+        # 피로도 점수 계산 (선형 보간)
         work_score = self._calc_work_score(now)
         freq_score = self._calc_freq_score()
         env_stress_score = self._calc_env_stress_score(now)
@@ -106,49 +122,29 @@ class FatigueManager:
                     self._last_recovery_tick = now
 
     # ──────────────────────────────────────────────────────────────
-    #  연속 작업 시간 점수
+    #  연속 작업 시간 점수 (선형 보간)
     # ──────────────────────────────────────────────────────────────
     def _calc_work_score(self, now):
-        """연속 작업 시간(분)에 따른 점수를 반환한다.
-
-        0-30분 -> 0, 30-60 -> 20, 60-90 -> 50, 90-120 -> 80, 120+ -> 100
-        """
+        """연속 작업 시간(분)에 따른 점수를 반환한다 (선형 보간)."""
         work_minutes = (now - self._work_start_time) / 60.0
-        if work_minutes <= 30:
-            return 0
-        elif work_minutes <= 60:
-            return 20
-        elif work_minutes <= 90:
-            return 50
-        elif work_minutes <= 120:
-            return 80
-        else:
-            return 100
+        return _lerp_score(work_minutes, [
+            (0, 0), (30, 0), (60, 20), (90, 50), (120, 80), (150, 100),
+        ])
 
     def get_continuous_work_minutes(self):
         """현재 연속 작업 시간을 분 단위로 반환한다."""
         return round((time.time() - self._work_start_time) / 60.0, 1)
 
     # ──────────────────────────────────────────────────────────────
-    #  졸음 빈도 점수
+    #  졸음 빈도 점수 (선형 보간)
     # ──────────────────────────────────────────────────────────────
     def _calc_freq_score(self):
-        """최근 30분 졸음 감지 횟수에 따른 점수를 반환한다.
-
-        0회 -> 0, 1-5 -> 20, 6-15 -> 50, 16-30 -> 75, 31+ -> 100
-        (이벤트는 5초 간격으로 기록되므로 30분에 최대 360건)
-        """
+        """최근 30분 졸음 감지 횟수에 따른 점수를 반환한다 (선형 보간)."""
         count = len(self._drowsiness_events)
-        if count == 0:
-            return 0
-        elif count <= 5:
-            return 20
-        elif count <= 15:
-            return 50
-        elif count <= 30:
-            return 75
-        else:
-            return 100
+        return _lerp_score(count, [
+            (0, 0), (3, 10), (5, 20), (10, 40),
+            (15, 50), (20, 65), (30, 80), (40, 100),
+        ])
 
     # ──────────────────────────────────────────────────────────────
     #  자연 회복 (정상 상태 지속 시)
@@ -168,7 +164,7 @@ class FatigueManager:
         return len(self._drowsiness_events)
 
     # ──────────────────────────────────────────────────────────────
-    #  환경 스트레스 점수
+    #  환경 스트레스 점수 (지속시간 비례 선형 보간)
     # ──────────────────────────────────────────────────────────────
     def _update_env_stress(self, env_data, now):
         """환경 데이터를 기반으로 스트레스 타이머를 갱신한다."""
@@ -198,31 +194,33 @@ class FatigueManager:
             self._humid_stress_start = None
 
     def _calc_env_stress_score(self, now):
-        """환경 스트레스 점수를 산출한다 (합산, 최대 100).
+        """환경 스트레스 점수를 산출한다 (지속시간 비례 선형 보간, 최대 100).
 
-        CO2 >= 1000ppm이 10분 이상 지속 -> +40
-        온도 >= 26C가 10분 이상 지속 -> +30
-        습도 >= 70%가 10분 이상 지속 -> +20
+        임계값 도달 전에도 지속시간에 비례하여 점수가 서서히 오른다.
         """
         score = 0
+        threshold = self._env_stress_duration
 
-        if (
-            self._co2_stress_start is not None
-            and (now - self._co2_stress_start) >= self._env_stress_duration
-        ):
-            score += 40
+        # CO2 스트레스 (최대 +50)
+        if self._co2_stress_start is not None:
+            duration = now - self._co2_stress_start
+            score += _lerp_score(duration, [
+                (0, 0), (threshold * 0.5, 10), (threshold, 40), (threshold * 2, 50),
+            ])
 
-        if (
-            self._temp_stress_start is not None
-            and (now - self._temp_stress_start) >= self._env_stress_duration
-        ):
-            score += 30
+        # 온도 스트레스 (최대 +35)
+        if self._temp_stress_start is not None:
+            duration = now - self._temp_stress_start
+            score += _lerp_score(duration, [
+                (0, 0), (threshold * 0.5, 8), (threshold, 30), (threshold * 2, 35),
+            ])
 
-        if (
-            self._humid_stress_start is not None
-            and (now - self._humid_stress_start) >= self._env_stress_duration
-        ):
-            score += 20
+        # 습도 스트레스 (최대 +25)
+        if self._humid_stress_start is not None:
+            duration = now - self._humid_stress_start
+            score += _lerp_score(duration, [
+                (0, 0), (threshold * 0.5, 5), (threshold, 20), (threshold * 2, 25),
+            ])
 
         return min(score, 100)
 

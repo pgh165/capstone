@@ -43,7 +43,7 @@ class TestFatigueManager(unittest.TestCase):
         self.fm._fatigue_score = 50
         self.assertEqual(self.fm.get_fatigue_level(), "caution")
 
-        self.fm._fatigue_score = 70
+        self.fm._fatigue_score = 75
         self.assertEqual(self.fm.get_fatigue_level(), "warning")
 
         self.fm._fatigue_score = 90

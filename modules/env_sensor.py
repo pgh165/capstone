@@ -7,6 +7,7 @@
 
 import sys
 import os
+import time
 
 # 프로젝트 루트를 sys.path에 추가하여 config 임포트 가능하게 함
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -19,10 +20,17 @@ class EnvironmentSensor:
     # MH-Z19B 읽기 명령 (9바이트 고정 프로토콜)
     MHZ19_READ_CMD = bytes([0xFF, 0x01, 0x86, 0x00, 0x00, 0x00, 0x00, 0x00, 0x79])
 
+    # 센서 데이터 캐싱 간격 (초) - 환경 데이터는 느리게 변하므로 매 프레임 읽을 필요 없음
+    _CACHE_INTERVAL = 5.0
+
     def __init__(self):
         self._serial = None
         self._dht_sensor = None
         self._dht_pin = config.GPIO_DHT
+
+        # read_all 캐시
+        self._cache = None
+        self._cache_time = 0
 
         if not config.IS_DESKTOP:
             self._init_hardware()
@@ -123,16 +131,25 @@ class EnvironmentSensor:
     def read_all(self):
         """CO2, 온도, 습도를 한 번에 읽어 딕셔너리로 반환한다.
 
+        캐시된 데이터가 _CACHE_INTERVAL 이내이면 캐시를 반환하여
+        불필요한 센서 I/O를 줄인다.
+
         Returns:
             dict: {"co2": int, "temperature": float, "humidity": float}
         """
+        now = time.time()
+        if self._cache is not None and (now - self._cache_time) < self._CACHE_INTERVAL:
+            return self._cache
+
         co2 = self.read_co2()
         temperature, humidity = self.read_temperature_humidity()
-        return {
+        self._cache = {
             "co2": co2,
             "temperature": temperature,
             "humidity": humidity,
         }
+        self._cache_time = now
+        return self._cache
 
     def cleanup(self):
         """시리얼 포트를 닫는다."""
