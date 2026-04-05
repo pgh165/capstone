@@ -24,6 +24,7 @@ class FatigueManager:
         # 최근 30분 졸음 감지 기록 (타임스탬프)
         self._drowsiness_events = deque()
         self._drowsiness_window = 30 * 60  # 30분 (초)
+        self._last_drowsy_event_time = 0  # 이벤트 중복 방지 (최소 1초 간격)
 
         # 환경 스트레스 추적 (각 조건이 처음 충족된 시각)
         self._co2_stress_start = None    # CO2 >= 1000ppm 시작 시각
@@ -54,9 +55,10 @@ class FatigueManager:
         """
         now = time.time()
 
-        # 졸음이 감지된 경우 (주의 이상) 이벤트 기록
-        if alert_level >= 1:
+        # 졸음이 감지된 경우 (주의 이상) 이벤트 기록 (최소 1초 간격)
+        if alert_level >= 1 and (now - self._last_drowsy_event_time) >= 1.0:
             self._drowsiness_events.append(now)
+            self._last_drowsy_event_time = now
 
         # 30분 윈도우 밖의 오래된 이벤트 제거
         while (

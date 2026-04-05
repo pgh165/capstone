@@ -46,7 +46,8 @@ try {
         'total_pages' => ceil($total / $limit)
     ]);
 } catch (Exception $e) {
+    error_log('[api/logs] ' . $e->getMessage());
     http_response_code(500);
-    echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    echo json_encode(['success' => false, 'error' => '데이터 조회 중 오류가 발생했습니다.']);
 }
 ?>

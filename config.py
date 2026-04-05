@@ -143,3 +143,31 @@ DUMMY_HUMIDITY = 50.0
 import os
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 GUIDES_JSON_PATH = os.path.join(BASE_DIR, 'data', 'guides.json')
+
+# ──────────────────────────────────────────────
+# .env 파일에서 DB 자격증명 로드 (있으면 덮어쓰기)
+# ──────────────────────────────────────────────
+def _load_env():
+    """프로젝트 루트의 .env 파일에서 환경변수를 읽어 설정을 덮어쓴다."""
+    env_path = os.path.join(BASE_DIR, '.env')
+    if not os.path.exists(env_path):
+        return {}
+    env_vars = {}
+    with open(env_path, 'r', encoding='utf-8') as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+            if '=' in line:
+                key, value = line.split('=', 1)
+                env_vars[key.strip()] = value.strip()
+    return env_vars
+
+_env = _load_env()
+if _env:
+    DB_HOST = _env.get('DB_HOST', DB_HOST)
+    DB_USER = _env.get('DB_USER', DB_USER)
+    DB_PASSWORD = _env.get('DB_PASSWORD', DB_PASSWORD)
+    DB_NAME = _env.get('DB_NAME', DB_NAME)
+    if 'DB_PORT' in _env:
+        DB_PORT = int(_env['DB_PORT'])

@@ -51,35 +51,35 @@ async function updateDailyReport() {
     }
 }
 
-// ─── 최근 피로도 + 환경 데이터 ───
-async function updateLatestStatus() {
-    try {
-        // 최근 감지 데이터에서 환경 정보 가져오기
-        const res = await fetch(`${API_BASE}/logs.php?page=1&limit=1`);
-        const json = await res.json();
+// ─── 안전한 DOM 생성 헬퍼 ───
+function escapeHtml(str) {
+    if (str === null || str === undefined) return '--';
+    const text = String(str);
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
 
-        if (json.success && json.data && json.data.length > 0) {
-            const latest = json.data[0];
-            document.getElementById('env-co2').textContent =
-                `${latest.co2_ppm ?? '--'} ppm`;
-            document.getElementById('env-temp-humid').textContent =
-                `${latest.temperature ?? '--'}°C / ${latest.humidity ?? '--'}%`;
-        }
+function createCell(text) {
+    const td = document.createElement('td');
+    td.textContent = (text === null || text === undefined) ? '--' : String(text);
+    return td;
+}
 
-        // 최근 피로도
-        const fatRes = await fetch(`${API_BASE}/fatigue.php?period=today`);
-        const fatJson = await fatRes.json();
-
-        if (fatJson.success && fatJson.data && fatJson.data.length > 0) {
-            const latest = fatJson.data[0];
-            document.getElementById('fatigue-score').textContent =
-                latest.fatigue_score ?? '--';
-            document.getElementById('fatigue-level').textContent =
-                getFatigueLevelLabel(latest.fatigue_level);
-        }
-    } catch (e) {
-        console.error('최신 상태 오류:', e);
-    }
+function createBadgeCell(level) {
+    const td = document.createElement('td');
+    const span = document.createElement('span');
+    const map = {
+        0: { cls: 'badge badge-normal', label: '정상' },
+        1: { cls: 'badge badge-caution', label: '주의' },
+        2: { cls: 'badge badge-warning', label: '경고' },
+        3: { cls: 'badge badge-danger', label: '위험' }
+    };
+    const info = map[level] ?? { cls: 'badge', label: String(level) };
+    span.className = info.cls;
+    span.textContent = info.label;
+    td.appendChild(span);
+    return td;
 }
 
 // ─── 감지 이력 테이블 ───
@@ -90,7 +90,13 @@ async function updateLogs() {
         const tbody = document.getElementById('logs-body');
 
         if (!json.success || !json.data || json.data.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="9">데이터가 없습니다.</td></tr>';
+            tbody.textContent = '';
+            const tr = document.createElement('tr');
+            const td = document.createElement('td');
+            td.colSpan = 9;
+            td.textContent = '데이터가 없습니다.';
+            tr.appendChild(td);
+            tbody.appendChild(tr);
             return;
         }
 
@@ -101,19 +107,20 @@ async function updateLogs() {
         document.getElementById('env-temp-humid').textContent =
             `${latest.temperature ?? '--'}°C / ${latest.humidity ?? '--'}%`;
 
-        tbody.innerHTML = json.data.map(row => `
-            <tr>
-                <td>${formatTime(row.detected_at)}</td>
-                <td>${parseFloat(row.ear_value).toFixed(3)}</td>
-                <td>${parseFloat(row.mar_value).toFixed(3)}</td>
-                <td>${row.drowsiness_score}</td>
-                <td>${getAlertBadge(row.alert_level)}</td>
-                <td>${row.co2_ppm} ppm</td>
-                <td>${row.temperature}°C</td>
-                <td>${row.humidity}%</td>
-                <td>${row.env_score}</td>
-            </tr>
-        `).join('');
+        tbody.textContent = '';
+        for (const row of json.data) {
+            const tr = document.createElement('tr');
+            tr.appendChild(createCell(formatTime(row.detected_at)));
+            tr.appendChild(createCell(parseFloat(row.ear_value).toFixed(3)));
+            tr.appendChild(createCell(parseFloat(row.mar_value).toFixed(3)));
+            tr.appendChild(createCell(row.drowsiness_score));
+            tr.appendChild(createBadgeCell(row.alert_level));
+            tr.appendChild(createCell(`${row.co2_ppm} ppm`));
+            tr.appendChild(createCell(`${row.temperature}°C`));
+            tr.appendChild(createCell(`${row.humidity}%`));
+            tr.appendChild(createCell(row.env_score));
+            tbody.appendChild(tr);
+        }
     } catch (e) {
         console.error('감지 이력 오류:', e);
     }
@@ -127,22 +134,32 @@ async function updateRecovery() {
         const tbody = document.getElementById('recovery-body');
 
         if (!json.success || !json.data || json.data.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="6">데이터가 없습니다.</td></tr>';
+            tbody.textContent = '';
+            const tr = document.createElement('tr');
+            const td = document.createElement('td');
+            td.colSpan = 6;
+            td.textContent = '데이터가 없습니다.';
+            tr.appendChild(td);
+            tbody.appendChild(tr);
             return;
         }
 
-        tbody.innerHTML = json.data.map(row => `
-            <tr>
-                <td>${formatTime(row.action_at)}</td>
-                <td>${getGuideTypeLabel(row.guide_type)}</td>
-                <td>${row.fatigue_before}</td>
-                <td>${row.fatigue_after}</td>
-                <td>${row.duration_sec}초</td>
-                <td class="${row.effective ? 'effective-yes' : 'effective-no'}">
-                    ${row.effective ? '효과 있음' : '효과 없음'}
-                </td>
-            </tr>
-        `).join('');
+        tbody.textContent = '';
+        for (const row of json.data) {
+            const tr = document.createElement('tr');
+            tr.appendChild(createCell(formatTime(row.action_at)));
+            tr.appendChild(createCell(getGuideTypeLabel(row.guide_type)));
+            tr.appendChild(createCell(row.fatigue_before));
+            tr.appendChild(createCell(row.fatigue_after));
+            tr.appendChild(createCell(`${row.duration_sec}초`));
+
+            const effectiveTd = document.createElement('td');
+            effectiveTd.className = row.effective ? 'effective-yes' : 'effective-no';
+            effectiveTd.textContent = row.effective ? '효과 있음' : '효과 없음';
+            tr.appendChild(effectiveTd);
+
+            tbody.appendChild(tr);
+        }
     } catch (e) {
         console.error('해소 기록 오류:', e);
     }
@@ -215,16 +232,6 @@ function formatTime(dateStr) {
         minute: '2-digit',
         second: '2-digit'
     });
-}
-
-function getAlertBadge(level) {
-    const map = {
-        0: '<span class="badge badge-normal">정상</span>',
-        1: '<span class="badge badge-caution">주의</span>',
-        2: '<span class="badge badge-warning">경고</span>',
-        3: '<span class="badge badge-danger">위험</span>'
-    };
-    return map[level] ?? `<span class="badge">${level}</span>`;
 }
 
 function getFatigueLevelLabel(level) {

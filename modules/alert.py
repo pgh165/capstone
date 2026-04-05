@@ -190,10 +190,12 @@ class AlertController:
             self._buzzer_on(frequency=2000, duty=80)
 
     def _short_beep(self, duration=0.2):
-        """짧은 비프음을 낸다."""
-        self._buzzer_on(frequency=1000, duty=50)
-        time.sleep(duration)
-        self._buzzer_off()
+        """짧은 비프음을 낸다 (별도 스레드에서 실행하여 메인 루프 블로킹 방지)."""
+        def _beep():
+            self._buzzer_on(frequency=1000, duty=50)
+            time.sleep(duration)
+            self._buzzer_off()
+        threading.Thread(target=_beep, daemon=True).start()
 
     # ──────────────────────────────────────────────────────────────
     #  정리
