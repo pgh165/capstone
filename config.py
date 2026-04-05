@@ -98,9 +98,9 @@ ENV_STRESS_DURATION = 600  # 10분
 # 데이터베이스 설정
 # ──────────────────────────────────────────────
 DB_HOST = 'localhost'
-DB_USER = 'root'
-DB_PASSWORD = 'password'
-DB_NAME = 'drowsiness_db'
+DB_USER = 'jiho'
+DB_PASSWORD = 'qwer1234'
+DB_NAME = 'jihodb'
 DB_CHARSET = 'utf8mb4'
 
 # ──────────────────────────────────────────────

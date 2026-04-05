@@ -24,7 +24,7 @@ class FatigueManager:
         # 최근 30분 졸음 감지 기록 (타임스탬프)
         self._drowsiness_events = deque()
         self._drowsiness_window = 30 * 60  # 30분 (초)
-        self._last_drowsy_event_time = 0  # 이벤트 중복 방지 (최소 1초 간격)
+        self._last_drowsy_event_time = 0  # 이벤트 중복 방지 (최소 5초 간격)
 
         # 환경 스트레스 추적 (각 조건이 처음 충족된 시각)
         self._co2_stress_start = None    # CO2 >= 1000ppm 시작 시각
@@ -42,6 +42,12 @@ class FatigueManager:
         # 현재 피로도 점수 캐시
         self._fatigue_score = 0.0
 
+        # 자연 회복 추적
+        self._last_normal_time = None  # 정상 상태 시작 시각
+        self._natural_recovery_interval = 60  # 정상 60초 지속 시 회복 시작
+        self._natural_recovery_rate = 2.0  # 초당 감소량 (60초마다 2점)
+        self._last_recovery_tick = 0
+
     # ──────────────────────────────────────────────────────────────
     #  메인 업데이트 (매 사이클 호출)
     # ──────────────────────────────────────────────────────────────
@@ -55,8 +61,8 @@ class FatigueManager:
         """
         now = time.time()
 
-        # 졸음이 감지된 경우 (주의 이상) 이벤트 기록 (최소 1초 간격)
-        if alert_level >= 1 and (now - self._last_drowsy_event_time) >= 1.0:
+        # 졸음이 감지된 경우 (주의 이상) 이벤트 기록 (최소 5초 간격)
+        if alert_level >= 1 and (now - self._last_drowsy_event_time) >= 5.0:
             self._drowsiness_events.append(now)
             self._last_drowsy_event_time = now
 
@@ -70,17 +76,34 @@ class FatigueManager:
         # 환경 스트레스 타이머 갱신
         self._update_env_stress(env_data, now)
 
+        # 자연 회복 처리 (정상 상태 지속 시 피로도 자연 감소)
+        self._update_natural_recovery(alert_level, now)
+
         # 피로도 점수 계산
         work_score = self._calc_work_score(now)
         freq_score = self._calc_freq_score()
         env_stress_score = self._calc_env_stress_score(now)
 
-        self._fatigue_score = (
+        new_score = (
             self._w_work * work_score
             + self._w_freq * freq_score
             + self._w_env * env_stress_score
         )
-        self._fatigue_score = round(min(max(self._fatigue_score, 0), 100), 1)
+        new_score = round(min(max(new_score, 0), 100), 1)
+
+        # 피로도는 올라갈 수 있고, 정상 상태에서는 천천히 내려감
+        if new_score > self._fatigue_score:
+            # 피로 증가: 바로 반영
+            self._fatigue_score = new_score
+        elif self._last_normal_time is not None:
+            # 정상 상태 지속 중: 자연 감소 적용
+            normal_duration = now - self._last_normal_time
+            if normal_duration >= self._natural_recovery_interval:
+                # 60초 이상 정상이면 회복 시작
+                if now - self._last_recovery_tick >= self._natural_recovery_interval:
+                    self._fatigue_score = max(self._fatigue_score - self._natural_recovery_rate, new_score)
+                    self._fatigue_score = round(max(self._fatigue_score, 0), 1)
+                    self._last_recovery_tick = now
 
     # ──────────────────────────────────────────────────────────────
     #  연속 작업 시간 점수
@@ -112,17 +135,33 @@ class FatigueManager:
     def _calc_freq_score(self):
         """최근 30분 졸음 감지 횟수에 따른 점수를 반환한다.
 
-        0회 -> 0, 1-2 -> 30, 3-5 -> 60, 6+ -> 100
+        0회 -> 0, 1-5 -> 20, 6-15 -> 50, 16-30 -> 75, 31+ -> 100
+        (이벤트는 5초 간격으로 기록되므로 30분에 최대 360건)
         """
         count = len(self._drowsiness_events)
         if count == 0:
             return 0
-        elif count <= 2:
-            return 30
         elif count <= 5:
-            return 60
+            return 20
+        elif count <= 15:
+            return 50
+        elif count <= 30:
+            return 75
         else:
             return 100
+
+    # ──────────────────────────────────────────────────────────────
+    #  자연 회복 (정상 상태 지속 시)
+    # ──────────────────────────────────────────────────────────────
+    def _update_natural_recovery(self, alert_level, now):
+        """정상 상태(alert_level == 0)가 지속되면 자연 회복을 추적한다."""
+        if alert_level == 0:
+            if self._last_normal_time is None:
+                self._last_normal_time = now
+                self._last_recovery_tick = now
+        else:
+            # 졸음 감지되면 자연 회복 타이머 리셋
+            self._last_normal_time = None
 
     def get_drowsy_count_30min(self):
         """최근 30분간 졸음 감지 횟수를 반환한다."""
@@ -248,6 +287,14 @@ class FatigueManager:
             amount = config.RECOVERY_REDUCTION
         self._fatigue_score = max(self._fatigue_score - amount, 0)
         self._fatigue_score = round(self._fatigue_score, 1)
+        # 회복 시 작업 타이머도 리셋하여 재충전 효과
+        self.reset_work_timer()
+        # 졸음 이벤트도 일부 제거 (오래된 것부터)
+        remove_count = min(len(self._drowsiness_events), 10)
+        for _ in range(remove_count):
+            if self._drowsiness_events:
+                self._drowsiness_events.popleft()
+        print(f"[fatigue] 피로 회복 적용: -{amount}점 → 현재 {self._fatigue_score}점")
 
     def reset_work_timer(self):
         """연속 작업 시간 타이머를 리셋한다."""

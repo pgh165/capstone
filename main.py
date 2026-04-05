@@ -10,6 +10,12 @@ import sys
 import time
 import os
 
+# 헤드리스 모드 감지 (SSH 등 디스플레이 없는 환경)
+HEADLESS = 'DISPLAY' not in os.environ and sys.platform != 'win32'
+if HEADLESS:
+    os.environ['OPENCV_VIDEOIO_PRIORITY_MSMF'] = '0'
+    print('[system] 헤드리스 모드 (GUI 없음, Ctrl+C로 종료)')
+
 # Windows 환경 한글 출력 설정
 if sys.platform == 'win32':
     sys.stdout.reconfigure(encoding='utf-8')
@@ -234,15 +240,27 @@ def main():
                 'work_min': int(fatigue_status['continuous_work_min']),
                 'drowsy_count': fatigue_status['drowsy_count_30min'],
             }
-            frame = draw_info(frame, display_data)
 
-            cv2.imshow('Drowsiness Detection', frame)
+            if HEADLESS:
+                # 헤드리스: 콘솔에 상태 출력 (5초마다)
+                if frame_count % (config.CAMERA_FPS * 5) == 0:
+                    level_names = {0: '정상', 1: '주의', 2: '경고', 3: '위험'}
+                    print(f"[{time.strftime('%H:%M:%S')}] "
+                          f"EAR={ear_value:.3f} MAR={mar_value:.3f} "
+                          f"졸음={int(drowsiness_score)}(L{alert_level}-{level_names.get(alert_level,'?')}) "
+                          f"피로={int(fatigue_status['fatigue_score'])}({fatigue_status['fatigue_level']}) "
+                          f"CO2={env_data['co2']}ppm T={env_data['temperature']}C")
+                time.sleep(0.03)  # CPU 부하 방지
+            else:
+                # GUI 모드: 화면에 정보 오버레이
+                frame = draw_info(frame, display_data)
+                cv2.imshow('Drowsiness Detection', frame)
 
-            # 종료 키
-            key = cv2.waitKey(1) & 0xFF
-            if key == ord('q') or key == 27:  # 'q' 또는 ESC
-                print("\n[main] 종료 요청")
-                break
+                # 종료 키
+                key = cv2.waitKey(1) & 0xFF
+                if key == ord('q') or key == 27:  # 'q' 또는 ESC
+                    print("\n[main] 종료 요청")
+                    break
 
     except KeyboardInterrupt:
         print("\n[main] Ctrl+C 감지 - 종료")
@@ -255,7 +273,8 @@ def main():
         env_sensor.cleanup()
         alert_controller.cleanup()
         db_writer.close()
-        cv2.destroyAllWindows()
+        if not HEADLESS:
+            cv2.destroyAllWindows()
         print("[main] 시스템 종료 완료")
 
 

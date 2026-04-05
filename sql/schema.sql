@@ -1,11 +1,11 @@
 -- AIoT 기반 졸음 및 집중력 저하 방지 시스템 - 데이터베이스 스키마
 -- MySQL / MariaDB
 
-CREATE DATABASE IF NOT EXISTS drowsiness_db
+CREATE DATABASE IF NOT EXISTS jihodb
     DEFAULT CHARACTER SET utf8mb4
     COLLATE utf8mb4_unicode_ci;
 
-USE drowsiness_db;
+USE jihodb;
 
 -- 졸음 감지 이력
 CREATE TABLE IF NOT EXISTS detection_logs (

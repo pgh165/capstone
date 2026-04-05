@@ -23,9 +23,9 @@ function loadEnv($path) {
 $env = loadEnv(__DIR__ . '/../../.env');
 
 $db_host = $env['DB_HOST'] ?? 'localhost';
-$db_user = $env['DB_USER'] ?? 'root';
-$db_pass = $env['DB_PASSWORD'] ?? 'password';
-$db_name = $env['DB_NAME'] ?? 'drowsiness_db';
+$db_user = $env['DB_USER'] ?? 'jiho';
+$db_pass = $env['DB_PASSWORD'] ?? 'qwer1234';
+$db_name = $env['DB_NAME'] ?? 'jihodb';
 $db_port = $env['DB_PORT'] ?? '3306';
 
 try {
