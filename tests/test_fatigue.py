@@ -290,6 +290,56 @@ class TestFatigueManagerRecovery(unittest.TestCase):
         self.assertFalse(self.fm.has_active_recovery)
 
 
+class TestRecoveryFaceDetection(unittest.TestCase):
+    """얼굴 감지 기반 회복 평가 테스트"""
+
+    def test_recovering_waits_for_face(self):
+        """가이드 시간 경과 후에도 얼굴 미검출이면 recovering 유지"""
+        session = RecoverySession(
+            guide_types=["stretching"],
+            fatigue_before=60,
+            drowsiness_before=50,
+            duration_sec=0,  # 즉시 시간 경과
+        )
+        now = time.time()
+        # 시간은 경과했지만 얼굴 미검출
+        phase = session.update(now + 1, 0, 0, 0, face_detected=False)
+        self.assertEqual(phase, "recovering")
+
+    def test_recovering_transitions_on_face_return(self):
+        """얼굴 복귀 시 evaluating으로 전환"""
+        session = RecoverySession(
+            guide_types=["stretching"],
+            fatigue_before=60,
+            drowsiness_before=50,
+            duration_sec=0,
+        )
+        now = time.time()
+        # 얼굴 미검출 → recovering 유지
+        session.update(now + 1, 0, 0, 0, face_detected=False)
+        # 얼굴 복귀 → evaluating 전환
+        phase = session.update(now + 2, 20, 0.3, 0.2, face_detected=True)
+        self.assertEqual(phase, "evaluating")
+
+    def test_evaluating_skips_no_face_samples(self):
+        """평가 중 얼굴 미검출 프레임은 샘플에 포함하지 않음"""
+        session = RecoverySession(
+            guide_types=["eye_rest"],
+            fatigue_before=60,
+            drowsiness_before=50,
+            duration_sec=0,
+        )
+        now = time.time()
+        # evaluating 진입 (전환만, 샘플 수집 안 됨)
+        session.update(now + 0.1, 20, 0.3, 0.2, face_detected=True)
+        # 얼굴 감지 프레임 1개 → 샘플 1개
+        session.update(now + 0.2, 20, 0.3, 0.2, face_detected=True)
+        # 얼굴 미검출 프레임 5개 → 샘플에 포함되면 안 됨
+        for i in range(5):
+            session.update(now + 1 + i, 0, 0, 0, face_detected=False)
+        self.assertEqual(len(session._eval_samples), 1)  # 감지된 1개만
+
+
 class TestRecoveryProfile(unittest.TestCase):
     """RecoveryProfile 개인화 테스트"""
 

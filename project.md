@@ -582,8 +582,10 @@ flowchart TD
 ```mermaid
 flowchart LR
     ALERT["피로 경고 발생"] --> GUIDE["원인 기반<br/>맞춤 가이드 출력"]
-    GUIDE --> RECOVER["recovering 단계<br/>(가이드 수행 대기)"]
-    RECOVER --> EVAL["evaluating 단계<br/>(30초간 생체 재측정)<br/>EAR, MAR, 졸음 점수 수집"]
+    GUIDE --> RECOVER["recovering 단계<br/>(가이드 수행 대기)<br/>사용자 자리 이탈 허용"]
+    RECOVER --> FACE{"가이드 시간 경과<br/>+ 사용자 카메라 복귀?"}
+    FACE -- No --> RECOVER
+    FACE -- Yes --> EVAL["evaluating 단계<br/>(30초간 생체 재측정)<br/>얼굴 감지 시에만 샘플 수집"]
     EVAL --> JUDGE{"회복 성공 판정"}
     JUDGE -- "피로도 10점↓ 이상<br/>OR 졸음 ≤ 30점" --> SUCCESS["회복 성공<br/>피로도 -30점 + 타이머 리셋"]
     JUDGE -- "기준 미달" --> FAIL["회복 부족<br/>추가 휴식 권고"]
@@ -606,9 +608,12 @@ flowchart LR
 1. recovering 단계
    - 가이드 중 최대 소요 시간(duration_sec)만큼 대기
    - 세션 시작 시 fatigue_before, drowsiness_before 기록
+   - 사용자가 자리를 비워도(얼굴 미검출) 정상 동작
+   - 시간 경과 + 얼굴 재감지 시 evaluating으로 전환
 
 2. evaluating 단계
    - 30초간 생체 데이터 수집 (최소 10샘플)
+   - 얼굴이 감지된 프레임에서만 샘플 수집 (미검출 프레임 제외)
    - 매 프레임: drowsiness_score, ear_value, mar_value 기록
 
 3. 판정 (OR 조건으로 회복 성공)

@@ -219,6 +219,7 @@ def main():
             if fatigue_manager.has_active_recovery:
                 recovery_result = fatigue_manager.update_recovery_session(
                     drowsiness_score, ear_value, mar_value,
+                    face_detected=(landmarks is not None),
                 )
                 if recovery_result and "effective" in recovery_result:
                     # 회복 결과를 DB에 기록

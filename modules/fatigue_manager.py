@@ -162,16 +162,28 @@ class RecoverySession:
         # recovering → evaluating → done
         self.phase = "recovering"
 
-    def update(self, now, drowsiness_score, ear_value, mar_value):
-        """매 프레임 호출. 현재 phase를 반환한다."""
+    def update(self, now, drowsiness_score, ear_value, mar_value,
+               face_detected=True):
+        """매 프레임 호출. 현재 phase를 반환한다.
+
+        Args:
+            face_detected (bool): 얼굴이 감지되었는지 여부.
+                recovering 단계에서는 얼굴 복귀를 대기하고,
+                evaluating 단계에서는 얼굴이 있을 때만 샘플을 수집한다.
+        """
         if self.phase == "recovering":
-            if now - self.start_time >= self.duration_sec:
+            time_elapsed = now - self.start_time >= self.duration_sec
+            if time_elapsed and face_detected:
+                # 가이드 시간 경과 + 사용자가 카메라 앞에 복귀
                 self.phase = "evaluating"
                 self._eval_start_time = now
-                print("[recovery] 회복 시간 종료 — 효과 평가를 시작합니다.")
+                print("[recovery] 사용자 복귀 감지 — 효과 평가를 시작합니다.")
             return self.phase
 
         if self.phase == "evaluating":
+            if not face_detected:
+                # 평가 중 얼굴 미검출 → 샘플 수집 건너뜀
+                return self.phase
             self._eval_samples.append({
                 "drowsiness": drowsiness_score,
                 "ear": ear_value,
@@ -621,8 +633,12 @@ class FatigueManager:
             f"소요={duration_sec}초)"
         )
 
-    def update_recovery_session(self, drowsiness_score, ear_value, mar_value):
+    def update_recovery_session(self, drowsiness_score, ear_value, mar_value,
+                               face_detected=True):
         """회복 세션 상태를 갱신한다. 매 프레임 호출.
+
+        Args:
+            face_detected (bool): 얼굴이 감지되었는지 여부.
 
         Returns:
             dict or None:
@@ -635,7 +651,7 @@ class FatigueManager:
 
         now = time.time()
         phase = self._recovery_session.update(
-            now, drowsiness_score, ear_value, mar_value,
+            now, drowsiness_score, ear_value, mar_value, face_detected,
         )
 
         if phase != "done":
