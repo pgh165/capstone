@@ -101,11 +101,18 @@ def main():
     db_writer = DBWriter()
 
     print("[main] 모든 모듈 초기화 완료")
+
+    # 개인화 회복 프로필 로드 (DB 이력 기반)
+    history = db_writer.get_recovery_history()
+    if history:
+        fatigue_manager.load_recovery_profile(history)
+
     print("[main] 'q' 키를 눌러 종료")
     print()
 
     last_db_save = time.time()
     last_fatigue_log = time.time()
+    last_profile_refresh = time.time()
     frame_count = 0
 
     try:
@@ -217,11 +224,18 @@ def main():
                     # 회복 결과를 DB에 기록
                     db_writer.save_recovery_action({
                         "guide_type": ",".join(recovery_result["guide_types"]),
+                        "dominant_cause": recovery_result.get("dominant_cause", ""),
                         "fatigue_before": int(recovery_result["fatigue_before"]),
                         "fatigue_after": int(recovery_result["fatigue_after"]),
+                        "drowsiness_before": int(recovery_result["drowsiness_before"]),
+                        "drowsiness_after": int(recovery_result["drowsiness_after"]),
                         "duration_sec": recovery_result["duration_sec"],
                         "effective": recovery_result["effective"],
                     })
+                    # 개인화 프로필 갱신
+                    history = db_writer.get_recovery_history()
+                    if history:
+                        fatigue_manager.load_recovery_profile(history)
                     if not recovery_result["effective"]:
                         print("[recovery] 추가 휴식이 필요합니다. "
                               "더 강한 회복 조치를 권장합니다.")

@@ -159,8 +159,11 @@ class DBWriter:
         Args:
             data_dict (dict): 저장할 데이터. 키 목록:
                 - guide_type (str)
+                - dominant_cause (str): "work", "drowsy", "env"
                 - fatigue_before (int)
                 - fatigue_after (int)
+                - drowsiness_before (int)
+                - drowsiness_after (int)
                 - duration_sec (int)
                 - effective (bool)
         """
@@ -171,18 +174,23 @@ class DBWriter:
 
         sql = """
             INSERT INTO recovery_actions
-                (action_at, guide_type, fatigue_before, fatigue_after,
+                (action_at, guide_type, dominant_cause,
+                 fatigue_before, fatigue_after,
+                 drowsiness_before, drowsiness_after,
                  duration_sec, effective)
             VALUES
-                (%s, %s, %s, %s, %s, %s)
+                (%s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
         try:
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             params = (
                 now,
                 data_dict.get("guide_type", ""),
+                data_dict.get("dominant_cause", ""),
                 data_dict.get("fatigue_before", 0),
                 data_dict.get("fatigue_after", 0),
+                data_dict.get("drowsiness_before", 0),
+                data_dict.get("drowsiness_after", 0),
                 data_dict.get("duration_sec", 0),
                 1 if data_dict.get("effective", False) else 0,
             )
@@ -190,6 +198,36 @@ class DBWriter:
                 cursor.execute(sql, params)
         except Exception as e:
             print(f"[db_writer] recovery_action 저장 실패: {e}")
+
+    def get_recovery_history(self, limit=100):
+        """최근 회복 이력을 조회한다.
+
+        Args:
+            limit (int): 최대 조회 건수.
+
+        Returns:
+            list[dict]: 회복 이력 리스트. DB 연결 실패 시 빈 리스트.
+        """
+        self._ensure_connection()
+        if self._conn is None:
+            return []
+
+        sql = """
+            SELECT guide_type, dominant_cause,
+                   fatigue_before, fatigue_after,
+                   drowsiness_before, drowsiness_after,
+                   effective
+            FROM recovery_actions
+            ORDER BY action_at DESC
+            LIMIT %s
+        """
+        try:
+            with self._conn.cursor() as cursor:
+                cursor.execute(sql, (limit,))
+                return cursor.fetchall()
+        except Exception as e:
+            print(f"[db_writer] recovery_history 조회 실패: {e}")
+            return []
 
     # ──────────────────────────────────────────────────────────────
     #  연결 종료

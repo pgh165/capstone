@@ -7,7 +7,7 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import config
-from modules.fatigue_manager import FatigueManager, RecoverySession
+from modules.fatigue_manager import FatigueManager, RecoverySession, RecoveryProfile
 
 
 class TestFatigueManager(unittest.TestCase):
@@ -288,6 +288,130 @@ class TestFatigueManagerRecovery(unittest.TestCase):
         result = self.fm.update_recovery_session(20, 0.3, 0.2)
         self.assertIn("effective", result)
         self.assertFalse(self.fm.has_active_recovery)
+
+
+class TestRecoveryProfile(unittest.TestCase):
+    """RecoveryProfile 개인화 테스트"""
+
+    def _make_history(self, guide_type, effective_count, total_count):
+        """테스트용 회복 이력을 생성한다."""
+        records = []
+        for i in range(total_count):
+            records.append({
+                "guide_type": guide_type,
+                "effective": 1 if i < effective_count else 0,
+            })
+        return records
+
+    def test_success_rate_calculation(self):
+        """성공률 계산 확인"""
+        profile = RecoveryProfile()
+        # eye_rest: 4/5 = 0.8
+        history = self._make_history("eye_rest", 4, 5)
+        profile.load_from_history(history)
+        rate = profile.get_success_rate("eye_rest")
+        self.assertAlmostEqual(rate, 0.8)
+
+    def test_insufficient_data_returns_none(self):
+        """데이터 부족 시 None 반환"""
+        profile = RecoveryProfile()
+        history = self._make_history("eye_rest", 1, 2)
+        profile.load_from_history(history)
+        self.assertIsNone(profile.get_success_rate("eye_rest"))
+
+    def test_rank_guides_sorts_by_effectiveness(self):
+        """효과순 정렬 확인"""
+        profile = RecoveryProfile()
+        # breathing: 90% 성공, hydration: 40% 성공
+        history = (
+            self._make_history("breathing", 9, 10)
+            + self._make_history("hydration", 2, 5)
+        )
+        profile.load_from_history(history)
+        result = profile.rank_guides(["eye_rest"], ["hydration", "breathing"])
+        # breathing(90%)이 hydration(40%)보다 앞에 위치
+        self.assertEqual(result[0], "eye_rest")  # base 유지
+        bi = result.index("breathing")
+        hi = result.index("hydration")
+        self.assertLess(bi, hi)
+
+    def test_rank_guides_excludes_low_effectiveness(self):
+        """성공률 30% 미만 가이드 제외"""
+        profile = RecoveryProfile()
+        # caffeine: 1/5 = 20% → 제외 대상
+        history = self._make_history("caffeine", 1, 5)
+        profile.load_from_history(history)
+        result = profile.rank_guides(["eye_rest"], ["caffeine", "breathing"])
+        self.assertNotIn("caffeine", result)
+
+    def test_rank_guides_adds_bonus_high_rate(self):
+        """성공률 70% 이상 가이드 보너스 추천"""
+        profile = RecoveryProfile()
+        # walk: 80% 성공 (원래 추천 목록에 없어도 추가)
+        history = self._make_history("walk", 4, 5)
+        profile.load_from_history(history)
+        result = profile.rank_guides(["eye_rest"], ["breathing"])
+        self.assertIn("walk", result)
+
+    def test_comma_separated_guide_types(self):
+        """쉼표 구분된 guide_type 파싱"""
+        profile = RecoveryProfile()
+        history = [
+            {"guide_type": "eye_rest,breathing", "effective": 1},
+            {"guide_type": "eye_rest,breathing", "effective": 1},
+            {"guide_type": "eye_rest,breathing", "effective": 1},
+        ]
+        profile.load_from_history(history)
+        self.assertAlmostEqual(profile.get_success_rate("eye_rest"), 1.0)
+        self.assertAlmostEqual(profile.get_success_rate("breathing"), 1.0)
+
+    def test_has_data(self):
+        """데이터 충분 여부 판별"""
+        profile = RecoveryProfile()
+        self.assertFalse(profile.has_data)
+        history = self._make_history("eye_rest", 3, 3)
+        profile.load_from_history(history)
+        self.assertTrue(profile.has_data)
+
+
+class TestFatigueManagerPersonalization(unittest.TestCase):
+    """FatigueManager 개인화 가이드 추천 테스트"""
+
+    def setUp(self):
+        self.fm = FatigueManager()
+
+    def _make_history(self, guide_type, effective_count, total_count):
+        records = []
+        for i in range(total_count):
+            records.append({
+                "guide_type": guide_type,
+                "effective": 1 if i < effective_count else 0,
+            })
+        return records
+
+    def test_personalized_guide_prefers_effective(self):
+        """개인화 시 효과 높은 가이드 우선 추천"""
+        self.fm._fatigue_score = 75  # warning 단계
+        # breathing이 가장 효과적이도록 이력 설정
+        history = (
+            self._make_history("breathing", 9, 10)  # 90%
+            + self._make_history("face_wash", 2, 5)  # 40%
+        )
+        self.fm.load_recovery_profile(history)
+        guides = self.fm.get_recommended_guide()
+        # breathing이 face_wash보다 앞에 있어야 함
+        if "breathing" in guides and "face_wash" in guides:
+            self.assertLess(
+                guides.index("breathing"),
+                guides.index("face_wash"),
+            )
+
+    def test_default_guide_without_profile(self):
+        """프로필 없으면 기본 순서 유지"""
+        self.fm._fatigue_score = 50  # caution 단계
+        guides = self.fm.get_recommended_guide()
+        self.assertIn("eye_rest", guides)
+        self.assertGreater(len(guides), 1)
 
 
 if __name__ == '__main__':

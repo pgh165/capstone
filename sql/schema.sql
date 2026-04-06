@@ -41,12 +41,16 @@ CREATE TABLE IF NOT EXISTS fatigue_logs (
 CREATE TABLE IF NOT EXISTS recovery_actions (
     id INT AUTO_INCREMENT PRIMARY KEY,
     action_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    guide_type VARCHAR(50),
+    guide_type VARCHAR(100),
+    dominant_cause VARCHAR(20),
     fatigue_before INT,
     fatigue_after INT,
+    drowsiness_before INT,
+    drowsiness_after INT,
     duration_sec INT,
     effective BOOLEAN DEFAULT FALSE,
-    INDEX idx_action_at (action_at)
+    INDEX idx_action_at (action_at),
+    INDEX idx_dominant_cause (dominant_cause)
 );
 
 -- 시스템 설정

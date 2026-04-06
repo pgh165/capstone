@@ -28,6 +28,118 @@ def _lerp_score(value, bp_x, bp_y):
     return bp_y[i] + t * (bp_y[i + 1] - bp_y[i])
 
 
+class RecoveryProfile:
+    """개인별 회복 가이드 효과 프로필.
+
+    DB의 recovery_actions 이력을 분석하여 가이드별 성공률을 계산하고,
+    개인에게 효과적인 가이드를 우선 추천한다.
+    """
+
+    MIN_SAMPLES = 3     # 개인화 적용 최소 데이터 수
+    LOW_RATE = 0.3      # 이 성공률 미만이면 비효과적으로 판정
+    HIGH_RATE = 0.7     # 이 성공률 이상이면 보너스 추천 대상
+
+    def __init__(self):
+        self._guide_stats = {}  # {guide_type: {"success": n, "total": n}}
+
+    def load_from_history(self, history):
+        """recovery_actions 이력에서 가이드별 통계를 계산한다.
+
+        Args:
+            history (list[dict]): DB에서 조회한 회복 이력.
+                각 dict에 guide_type(쉼표 구분), effective 필드 필요.
+        """
+        stats = {}
+        for record in history:
+            guide_str = record.get("guide_type", "")
+            effective = bool(record.get("effective", 0))
+
+            for gt in guide_str.split(","):
+                gt = gt.strip()
+                if not gt:
+                    continue
+                if gt not in stats:
+                    stats[gt] = {"success": 0, "total": 0}
+                stats[gt]["total"] += 1
+                if effective:
+                    stats[gt]["success"] += 1
+
+        self._guide_stats = stats
+
+    def get_success_rate(self, guide_type):
+        """특정 가이드의 개인별 성공률을 반환한다.
+
+        Returns:
+            float or None: 0.0~1.0 성공률. 데이터 부족 시 None.
+        """
+        stat = self._guide_stats.get(guide_type)
+        if stat is None or stat["total"] < self.MIN_SAMPLES:
+            return None
+        return stat["success"] / stat["total"]
+
+    def rank_guides(self, base_guides, cause_guides):
+        """기본 + 원인별 가이드를 개인 효과순으로 재정렬한다.
+
+        - 기본 가이드(base)는 순서 유지
+        - 원인별 가이드는 성공률 높은 순으로 정렬
+        - 성공률 30% 미만 가이드는 제외
+        - 성공률 70% 이상이면서 목록에 없는 가이드를 보너스 추천
+
+        Args:
+            base_guides (list[str]): 단계별 기본 가이드 목록.
+            cause_guides (list[str]): 원인별 추가 가이드 목록.
+
+        Returns:
+            list[str]: 개인화 정렬된 가이드 목록.
+        """
+        result = list(base_guides)
+
+        # 원인별 가이드를 성공률 순 정렬 (비효과적 제외)
+        scored = []
+        for g in cause_guides:
+            rate = self.get_success_rate(g)
+            if rate is not None and rate < self.LOW_RATE:
+                continue  # 성공률 30% 미만 → 제외
+            # 데이터 부족(None)이면 기본 0.5로 중간 순위
+            scored.append((g, rate if rate is not None else 0.5))
+        scored.sort(key=lambda x: -x[1])
+
+        for g, _ in scored:
+            if g not in result:
+                result.append(g)
+
+        # 보너스: 과거 성공률 70% 이상인 가이드 추가 추천
+        for g, stat in self._guide_stats.items():
+            if g in result or stat["total"] < self.MIN_SAMPLES:
+                continue
+            rate = stat["success"] / stat["total"]
+            if rate >= self.HIGH_RATE:
+                result.append(g)
+
+        return result
+
+    @property
+    def has_data(self):
+        """개인화에 충분한 데이터가 있는지 반환한다."""
+        return any(
+            s["total"] >= self.MIN_SAMPLES
+            for s in self._guide_stats.values()
+        )
+
+    def get_stats_summary(self):
+        """가이드별 통계 요약을 반환한다."""
+        summary = {}
+        for gt, stat in self._guide_stats.items():
+            total = stat["total"]
+            rate = stat["success"] / total if total > 0 else 0
+            summary[gt] = {
+                "total": total,
+                "success": stat["success"],
+                "rate": round(rate, 2),
+            }
+        return summary
+
+
 class RecoverySession:
     """피로 회복 세션을 추적하고 생체 데이터로 효과를 검증한다.
 
@@ -35,11 +147,12 @@ class RecoverySession:
     """
 
     def __init__(self, guide_types, fatigue_before, drowsiness_before,
-                 duration_sec):
+                 duration_sec, dominant_cause=""):
         self.guide_types = guide_types
         self.fatigue_before = fatigue_before
         self.drowsiness_before = drowsiness_before
         self.duration_sec = duration_sec
+        self.dominant_cause = dominant_cause
         self.start_time = time.time()
 
         # 평가 단계 데이터
@@ -114,6 +227,7 @@ class RecoverySession:
             "effective": effective,
             "reason": " / ".join(reasons),
             "guide_types": self.guide_types,
+            "dominant_cause": self.dominant_cause,
             "duration_sec": self.duration_sec,
             "fatigue_before": round(self.fatigue_before, 1),
             "fatigue_after": round(fatigue_after, 1),
@@ -185,6 +299,9 @@ class FatigueManager:
 
         # 회복 세션
         self._recovery_session = None
+
+        # 개인화 회복 프로필
+        self._recovery_profile = RecoveryProfile()
 
     # ──────────────────────────────────────────────────────────────
     #  메인 업데이트 (매 사이클 호출)
@@ -406,11 +523,28 @@ class FatigueManager:
         }
         return max(scores, key=scores.get)
 
+    def load_recovery_profile(self, history):
+        """DB 회복 이력으로 개인화 프로필을 갱신한다.
+
+        Args:
+            history (list[dict]): db_writer.get_recovery_history() 결과.
+        """
+        self._recovery_profile.load_from_history(history)
+        if self._recovery_profile.has_data:
+            stats = self._recovery_profile.get_stats_summary()
+            print(f"[fatigue] 개인화 프로필 로드: {stats}")
+
+    @property
+    def recovery_profile(self):
+        """현재 개인화 회복 프로필을 반환한다."""
+        return self._recovery_profile
+
     def get_recommended_guide(self):
         """피로 단계와 주된 원인에 따른 추천 가이드 유형 리스트를 반환한다.
 
         피로의 주된 원인(연속 작업/졸음 빈도/환경 스트레스)을 분석하여
         단계별 기본 가이드에 원인별 맞춤 가이드를 추가한다.
+        개인화 프로필이 있으면 효과 높은 가이드를 우선 추천한다.
 
         Returns:
             list[str]: 추천 가이드 유형 목록.
@@ -421,12 +555,18 @@ class FatigueManager:
 
         dominant = self.get_dominant_cause()
         mapping = self._GUIDE_MAP[level]
+        base_guides = list(mapping["base"])
+        cause_guides = list(mapping[dominant])
 
-        guides = list(mapping["base"])
-        for g in mapping[dominant]:
-            if g not in guides:
-                guides.append(g)
-        return guides
+        # 개인화 프로필이 있으면 효과순 정렬 적용
+        if self._recovery_profile.has_data:
+            return self._recovery_profile.rank_guides(base_guides, cause_guides)
+
+        # 프로필 없으면 기본 순서
+        for g in cause_guides:
+            if g not in base_guides:
+                base_guides.append(g)
+        return base_guides
 
     # ──────────────────────────────────────────────────────────────
     #  피로 회복 및 리셋
@@ -472,6 +612,7 @@ class FatigueManager:
             fatigue_before=self._fatigue_score,
             drowsiness_before=drowsiness_score,
             duration_sec=duration_sec,
+            dominant_cause=self.get_dominant_cause(),
         )
         print(
             f"[recovery] 회복 세션 시작 "

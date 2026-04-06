@@ -625,7 +625,65 @@ flowchart LR
   - drowsiness_before / drowsiness_after / drowsiness_drop
   - avg_ear / avg_mar (평가 구간 평균)
   - eval_samples (수집된 샘플 수)
+  - dominant_cause (주된 피로 원인)
   - effective (boolean) / reason (판정 사유)
+```
+
+### 5.5 개인화 회복 프로필 (RecoveryProfile)
+
+DB에 축적된 회복 이력을 분석하여, 개인에게 효과적인 가이드를 우선 추천한다.
+
+```mermaid
+flowchart TD
+    DB["recovery_actions<br/>(DB 회복 이력)"] --> LOAD["RecoveryProfile<br/>가이드별 성공률 계산"]
+    LOAD --> RANK["개인화 정렬"]
+
+    subgraph RANK_DETAIL["개인화 정렬 로직"]
+        R1["1. 기본 가이드 순서 유지"]
+        R2["2. 원인별 가이드를 성공률 높은 순 정렬"]
+        R3["3. 성공률 30% 미만 가이드 제외"]
+        R4["4. 성공률 70% 이상 가이드 보너스 추천"]
+        R1 --> R2 --> R3 --> R4
+    end
+
+    RANK --> RECOMMEND["개인화된 가이드 추천"]
+    RECOMMEND --> SESSION["RecoverySession<br/>효과 검증"]
+    SESSION --> DB
+
+    style DB fill:#E6F1FB,stroke:#185FA5,color:#042C53
+    style LOAD fill:#EEEDFE,stroke:#534AB7,color:#26215C
+    style RANK_DETAIL fill:#F5F0FF,stroke:#7C3AED,color:#3B1F7A
+    style RECOMMEND fill:#E1F5EE,stroke:#0F6E56,color:#04342C
+    style SESSION fill:#FAEEDA,stroke:#854F0B,color:#412402
+```
+
+```
+개인화 알고리즘:
+
+1. 데이터 수집
+   - recovery_actions 테이블에서 최근 100건 조회
+   - 쉼표 구분된 guide_type을 개별 가이드로 분리
+   - 각 가이드별 (성공 횟수 / 총 시도 횟수) = 성공률 계산
+
+2. 개인화 적용 조건
+   - 특정 가이드의 시도 횟수가 3회 이상이어야 개인화 적용
+   - 3회 미만이면 기본 순서(0.5 기본 점수)로 중간 순위 배정
+
+3. 가이드 정렬 규칙
+   - 기본 가이드(base): 피로 단계에 따른 필수 가이드, 순서 변경 없음
+   - 원인별 가이드: 성공률 높은 순으로 재정렬
+   - 성공률 30% 미만: 해당 사용자에게 비효과적 → 추천 목록에서 제외
+   - 성공률 70% 이상: 현재 추천 목록에 없더라도 보너스로 추가 추천
+
+4. 프로필 갱신 시점
+   - 시스템 시작 시 DB에서 초기 로드
+   - 매 회복 세션 완료 후 즉시 갱신
+
+예시 (사용자 A의 프로필):
+  eye_rest:  8/10 = 80% → 우선 추천 + 보너스 대상
+  breathing: 6/10 = 60% → 중간 순위
+  caffeine:  1/5  = 20% → 제외 (이 사용자에게 비효과적)
+  walk:      4/4  = 100% → 보너스 추천 (다른 원인에서도 추가)
 ```
 
 ---
@@ -674,8 +732,11 @@ erDiagram
         int id PK
         datetime action_at
         varchar guide_type
+        varchar dominant_cause
         int fatigue_before
         int fatigue_after
+        int drowsiness_before
+        int drowsiness_after
         int duration_sec
         boolean effective
     }
