@@ -113,6 +113,12 @@ DB_SAVE_INTERVAL = 5   # 초 단위 (매 N초마다 DB에 저장)
 # ──────────────────────────────────────────────
 RECOVERY_REDUCTION = 30  # 피로 해소 시 감소 점수
 
+# 회복 검증 설정
+RECOVERY_EVAL_DURATION = 30   # 회복 후 평가 시간 (초)
+RECOVERY_EVAL_MIN_SAMPLES = 10  # 최소 평가 샘플 수
+RECOVERY_EFFECTIVE_DROWSY_MAX = 30  # 이 점수 이하면 회복 성공 (졸음 점수)
+RECOVERY_EFFECTIVE_FATIGUE_DROP = 10  # 이 점수 이상 하락하면 회복 성공 (피로도)
+
 # ──────────────────────────────────────────────
 # MediaPipe Face Mesh 랜드마크 인덱스
 # ──────────────────────────────────────────────

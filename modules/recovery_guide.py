@@ -17,7 +17,10 @@ class RecoveryGuide:
     """피로 해소 가이드 데이터를 관리하고 출력하는 클래스."""
 
     # 지원하는 가이드 유형
-    VALID_TYPES = ["eye_rest", "stretching", "breathing", "ventilation", "rest_break"]
+    VALID_TYPES = [
+        "eye_rest", "stretching", "breathing", "ventilation", "rest_break",
+        "face_wash", "hydration", "posture_correction", "caffeine", "walk",
+    ]
 
     def __init__(self):
         self._guides = {}
@@ -53,27 +56,34 @@ class RecoveryGuide:
         """
         return self._guides.get(guide_type, None)
 
-    def get_guides_for_level(self, fatigue_level):
+    def get_guides_for_level(self, fatigue_level, guide_types=None):
         """피로 단계에 따라 적절한 가이드 목록을 반환한다.
 
         Args:
             fatigue_level (str): "good", "caution", "warning", "danger"
+            guide_types (list[str], optional): 직접 지정할 가이드 유형 목록.
+                지정하면 fatigue_level 기반 기본 매핑 대신 이 목록을 사용한다.
 
         Returns:
             list[dict]: 해당 단계에 맞는 가이드 딕셔너리 목록.
         """
-        if fatigue_level == "caution":
-            types = ["eye_rest", "ventilation"]
-        elif fatigue_level == "warning":
-            types = ["stretching", "breathing", "ventilation"]
-        elif fatigue_level == "danger":
-            types = ["rest_break", "stretching", "breathing", "ventilation", "eye_rest"]
-        else:
-            # "good" 이면 가이드 불필요
+        if fatigue_level == "good":
             return []
 
+        if guide_types is None:
+            # 하위 호환: guide_types 미지정 시 기본 매핑 사용
+            if fatigue_level == "caution":
+                guide_types = ["eye_rest", "ventilation"]
+            elif fatigue_level == "warning":
+                guide_types = ["stretching", "breathing", "ventilation"]
+            elif fatigue_level == "danger":
+                guide_types = ["rest_break", "stretching", "breathing",
+                               "ventilation", "eye_rest"]
+            else:
+                return []
+
         guides = []
-        for t in types:
+        for t in guide_types:
             guide = self.get_guide(t)
             if guide is not None:
                 guides.append(guide)
@@ -114,13 +124,17 @@ class RecoveryGuide:
         print("=" * 50)
         print()
 
-    def display_guides_for_level(self, fatigue_level):
+    def display_guides_for_level(self, fatigue_level, guide_types=None,
+                                dominant_cause=None):
         """피로 단계에 맞는 모든 가이드를 순서대로 출력한다.
 
         Args:
             fatigue_level (str): "good", "caution", "warning", "danger"
+            guide_types (list[str], optional): 직접 지정할 가이드 유형 목록.
+            dominant_cause (str, optional): 주된 피로 원인
+                ("work", "drowsy", "env")
         """
-        guides = self.get_guides_for_level(fatigue_level)
+        guides = self.get_guides_for_level(fatigue_level, guide_types)
         if not guides:
             return
 
@@ -129,9 +143,17 @@ class RecoveryGuide:
             "warning": "경고",
             "danger": "위험",
         }
+        cause_labels = {
+            "work": "장시간 연속 작업",
+            "drowsy": "졸음 빈번 감지",
+            "env": "환경 스트레스(CO2/온도/습도)",
+        }
         label = level_labels.get(fatigue_level, fatigue_level)
         print(f"\n[피로 해소 가이드] 현재 피로 단계: {label}")
-        print(f"총 {len(guides)}개의 가이드를 제공합니다.\n")
+        if dominant_cause:
+            cause_label = cause_labels.get(dominant_cause, dominant_cause)
+            print(f"  주요 원인: {cause_label}")
+        print(f"  총 {len(guides)}개의 맞춤 가이드를 제공합니다.\n")
 
         for guide in guides:
             self.display_guide(guide)

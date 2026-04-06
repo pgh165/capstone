@@ -133,14 +133,14 @@ flowchart LR
 graph LR
     subgraph INPUT["입력 모듈 (Python)"]
         A1["camera.py<br/>카메라 캡처"]
-        A2["env_sensor.py<br/>CO₂ + 온습도 읽기"]
+        A2["env_sensor.py<br/>CO₂ + 온습도 읽기 (5초 캐싱)"]
     end
 
     subgraph PROCESS["처리 모듈 (Python)"]
         B1["face_detector.py<br/>MediaPipe 랜드마크"]
-        B2["drowsiness.py<br/>EAR / MAR 계산"]
-        B3["head_pose.py<br/>고개 기울기 추정"]
-        B4["judge.py<br/>종합 졸음 판단"]
+        B2["drowsiness.py<br/>EAR / MAR / PERCLOS 계산"]
+        B3["head_pose.py<br/>고개 기울기 추정 (초기값 재활용)"]
+        B4["judge.py<br/>종합 졸음 판단 (EMA 스무딩)"]
         B5["fatigue_manager.py<br/>피로도 추적 + 해소 가이드"]
     end
 
@@ -401,12 +401,18 @@ CO₂ 점수 (선형 보간):
 flowchart TD
     subgraph TRACK["피로도 추적"]
         T1["연속 작업 시간 측정"]
-        T2["졸음 감지 빈도 누적<br/>(최소 1초 간격으로 기록)"]
+        T2["졸음 감지 빈도 누적<br/>(최소 5초 간격으로 기록)"]
         T3["환경 스트레스 누적<br/>(고CO₂, 고온 지속시간)"]
         T4["누적 피로도 점수 산출"]
         T1 --> T4
         T2 --> T4
         T3 --> T4
+    end
+
+    subgraph CAUSE["주된 원인 분석"]
+        C1["🕐 연속 작업<br/>(work)"]
+        C2["😴 졸음 빈도<br/>(drowsy)"]
+        C3["🌡️ 환경 스트레스<br/>(env)"]
     end
 
     subgraph LEVEL["피로 단계 판정"]
@@ -416,31 +422,49 @@ flowchart TD
         L4["🔴 위험 (86~100)<br/>즉시 휴식 필요"]
     end
 
-    subgraph GUIDE["피로 해소 가이드"]
-        G1["👁️ 눈 피로 해소<br/>20-20-20 규칙, 눈 운동"]
-        G2["🧘 스트레칭 가이드<br/>목/어깨/허리 스트레칭"]
-        G3["🫁 호흡법 안내<br/>4-7-8 호흡, 복식호흡"]
-        G4["🪟 환기 권고<br/>CO₂ 기반 환기 알림"]
-        G5["☕ 휴식 권고<br/>일어서서 걷기, 물 마시기"]
+    subgraph GUIDE["원인 기반 맞춤 가이드 (10종)"]
+        G1["👁️ 눈 피로 해소"]
+        G2["🧘 스트레칭"]
+        G3["🫁 호흡법"]
+        G4["🪟 환기 권고"]
+        G5["☕ 휴식 권고"]
+        G6["🧊 냉수 세안"]
+        G7["💧 수분 보충"]
+        G8["🪑 자세 교정"]
+        G9["☕ 카페인 섭취"]
+        G10["🚶 가벼운 산책"]
     end
 
+    T4 --> CAUSE
     T4 --> L1
     T4 --> L2
     T4 --> L3
     T4 --> L4
 
+    CAUSE --> GUIDE
+
     L2 --> G1
+    L2 --> G8
+    L2 --> G7
+    L2 --> G6
     L2 --> G4
     L3 --> G2
+    L3 --> G1
+    L3 --> G10
     L3 --> G3
+    L3 --> G9
     L3 --> G4
     L4 --> G5
     L4 --> G2
+    L4 --> G1
+    L4 --> G10
+    L4 --> G6
+    L4 --> G9
     L4 --> G3
     L4 --> G4
-    L4 --> G1
 
     style TRACK fill:#EEEDFE,stroke:#534AB7,color:#26215C
+    style CAUSE fill:#F5F0FF,stroke:#7C3AED,color:#3B1F7A
     style LEVEL fill:#FAEEDA,stroke:#854F0B,color:#412402
     style GUIDE fill:#E1F5EE,stroke:#0F6E56,color:#04342C
 ```
@@ -469,19 +493,33 @@ flowchart TD
   온도 ≥ 26°C:   (0분, 0점) → (5분, 8점) → (10분, 30점) → (20분, 35점)
   습도 ≥ 70%:    (0분, 0점) → (5분, 5점) → (10분, 20점) → (20분, 25점)
   (합산, 최대 100점)
+
+효율 최적화:
+  - Breakpoint를 x/y 분리 튜플로 사전 계산하여 매 프레임 리스트 할당 제거
+  - bisect 이진 탐색으로 구간 탐색 O(n) → O(log n)
+  - 환경 스트레스 threshold 곱셈(×0.5, ×2.0) __init__에서 1회 사전 계산
+  - 연속작업 점수 1초 캐싱 (분 단위로만 변하므로 30FPS 기준 계산 횟수 1/30)
 ```
 
-### 5.3 피로 해소 가이드
+### 5.3 원인 기반 맞춤 피로 해소 가이드
 
-| 피로 단계 | 제공 가이드 |
-|-----------|-------------|
-| 🟡 주의 (41~70) | 눈 피로 해소 → 환기 권고 |
-| 🟠 경고 (71~85) | 스트레칭 → 호흡법 → 환기 권고 |
-| 🔴 위험 (86~100) | 즉시 휴식 → 스트레칭 → 호흡법 → 환기 → 눈 피로 해소 |
+피로의 **주된 원인**(연속 작업 / 졸음 빈도 / 환경 스트레스)을 분석하여, 피로 단계별 기본 가이드에 원인별 맞춤 가이드를 추가 제공한다. 가이드 데이터는 `data/guides.json`에 JSON 형태로 저장되어 있으며, 콘솔에 5분 간격으로 출력된다.
 
-가이드 데이터는 `data/guides.json`에 JSON 형태로 저장되어 있으며, 콘솔에 5분 간격으로 출력된다.
+```
+주된 원인 판별:
+  각 요인(연속작업, 졸음빈도, 환경스트레스)의 개별 점수를 비교하여
+  가장 높은 점수의 요인을 dominant_cause로 선정
+```
 
-#### 피로 해소 가이드 내용
+#### 단계별 기본 + 원인별 가이드 매핑
+
+| 피로 단계 | 기본 가이드 | + 연속작업(work) | + 졸음(drowsy) | + 환경(env) |
+|-----------|------------|-----------------|---------------|------------|
+| 🟡 주의 (41~70) | 눈 피로 해소 | 자세 교정, 수분 보충 | 냉수 세안, 호흡법 | 환기 권고 |
+| 🟠 경고 (71~85) | 스트레칭, 눈 피로 해소 | 산책, 수분 보충, 자세 교정 | 냉수 세안, 호흡법, 카페인 | 환기 권고, 호흡법 |
+| 🔴 위험 (86~100) | 즉시 휴식, 스트레칭, 눈 피로 해소 | 산책, 수분 보충 | 냉수 세안, 카페인, 호흡법 | 환기 권고, 산책 |
+
+#### 피로 해소 가이드 내용 (10종)
 
 **👁️ 눈 피로 해소 (20-20-20 규칙)** (약 1분)
 - 20초 동안 6m(20피트) 먼 곳 바라보기
@@ -509,23 +547,85 @@ flowchart TD
 - 가벼운 간식 (혈당 유지)
 - 5분 이상 완전한 휴식
 
-### 5.4 피로 해소 확인 및 리셋
+**🧊 냉수 세안** (약 1분)
+- 찬물로 얼굴을 3~4회 가볍게 세안
+- 목 뒤에도 찬물을 적셔 각성도 향상
+- 수건으로 가볍게 두드리며 마무리
+
+**💧 수분 보충** (약 30초)
+- 물 한 잔(200~300ml) 천천히 마시기
+- 카페인 음료 대신 미지근한 물이나 허브차 권장
+- 1시간 간격 수분 보충 습관화
+
+**🪑 자세 교정** (약 30초)
+- 등을 의자 등받이에 붙이고 허리를 바로 세우기
+- 모니터 상단이 눈높이와 일치하도록 조절
+- 키보드와 팔꿈치 높이를 맞추고 어깨 힘 빼기
+- 발바닥이 바닥에 완전히 닿도록 의자 높이 조절
+
+**☕ 카페인 섭취 권장** (약 1분)
+- 커피 1잔(150~200ml) 또는 녹차 1잔 섭취
+- 효과는 섭취 후 약 20~30분 뒤에 발현
+- 하루 총량 400mg(커피 약 4잔) 초과 금지
+- 오후 3시 이후 카페인은 수면에 영향
+
+**🚶 가벼운 산책** (약 5분)
+- 자리에서 일어나 5분간 가볍게 걷기
+- 가능하면 실외에서 걸으며 신선한 공기 호흡
+- 계단 오르내리기도 효과적
+- 돌아온 후 가벼운 스트레칭으로 마무리
+
+### 5.4 회복 효과 검증 시스템 (RecoverySession)
+
+가이드 제공 후 **생체 데이터를 재측정**하여 실제 회복 효과를 검증한다. `RecoverySession` 클래스가 세션을 추적하며, 3단계(recovering → evaluating → done)로 진행된다.
 
 ```mermaid
 flowchart LR
-    ALERT["피로 경고 발생"] --> GUIDE["가이드 출력"]
-    GUIDE --> WAIT["일정 시간 대기<br/>(가이드 실행 시간)"]
-    WAIT --> CHECK{"EAR/MAR 정상화?<br/>+ 활동 감지?"}
-    CHECK -- Yes --> RESET["피로도 부분 리셋<br/>(-30점 감소)"]
-    CHECK -- No --> REPEAT["가이드 재출력<br/>+ 강도 상향"]
-    RESET --> LOG["recovery_actions에<br/>해소 기록 저장<br/>(effective = true)"]
-    REPEAT --> LOG2["recovery_actions에<br/>해소 기록 저장<br/>(effective = false)"]
+    ALERT["피로 경고 발생"] --> GUIDE["원인 기반<br/>맞춤 가이드 출력"]
+    GUIDE --> RECOVER["recovering 단계<br/>(가이드 수행 대기)"]
+    RECOVER --> EVAL["evaluating 단계<br/>(30초간 생체 재측정)<br/>EAR, MAR, 졸음 점수 수집"]
+    EVAL --> JUDGE{"회복 성공 판정"}
+    JUDGE -- "피로도 10점↓ 이상<br/>OR 졸음 ≤ 30점" --> SUCCESS["회복 성공<br/>피로도 -30점 + 타이머 리셋"]
+    JUDGE -- "기준 미달" --> FAIL["회복 부족<br/>추가 휴식 권고"]
+    SUCCESS --> LOG["recovery_actions에<br/>해소 기록 저장<br/>(effective = true)"]
+    FAIL --> LOG2["recovery_actions에<br/>해소 기록 저장<br/>(effective = false)"]
 
     style ALERT fill:#FCEBEB,stroke:#A32D2D,color:#501313
     style GUIDE fill:#E1F5EE,stroke:#0F6E56,color:#04342C
-    style RESET fill:#EAF3DE,stroke:#3B6D11,color:#173404
+    style RECOVER fill:#FAEEDA,stroke:#854F0B,color:#412402
+    style EVAL fill:#EEEDFE,stroke:#534AB7,color:#26215C
+    style SUCCESS fill:#EAF3DE,stroke:#3B6D11,color:#173404
+    style FAIL fill:#FAECE7,stroke:#993C1D,color:#4A1B0C
     style LOG fill:#E6F1FB,stroke:#185FA5,color:#042C53
     style LOG2 fill:#E6F1FB,stroke:#185FA5,color:#042C53
+```
+
+```
+회복 검증 흐름:
+
+1. recovering 단계
+   - 가이드 중 최대 소요 시간(duration_sec)만큼 대기
+   - 세션 시작 시 fatigue_before, drowsiness_before 기록
+
+2. evaluating 단계
+   - 30초간 생체 데이터 수집 (최소 10샘플)
+   - 매 프레임: drowsiness_score, ear_value, mar_value 기록
+
+3. 판정 (OR 조건으로 회복 성공)
+   - 피로도가 세션 시작 대비 10점 이상 하락
+   - 평균 졸음 점수가 30점 이하로 정상화
+
+4. 후속 처리
+   - 성공: apply_recovery() 실행 (피로 30점 감소 + 작업 타이머 리셋)
+   - 실패: 추가 휴식 권고 메시지, 다음 5분 주기에 강한 가이드 재추천
+   - 공통: recovery_actions 테이블에 before/after/effective 기록
+
+회복 결과 데이터:
+  - fatigue_before / fatigue_after / fatigue_drop
+  - drowsiness_before / drowsiness_after / drowsiness_drop
+  - avg_ear / avg_mar (평가 구간 평균)
+  - eval_samples (수집된 샘플 수)
+  - effective (boolean) / reason (판정 사유)
 ```
 
 ---

@@ -182,16 +182,49 @@ def main():
             fatigue_manager.update(drowsiness_score, alert_level, env_data)
             fatigue_status = fatigue_manager.get_status()
 
-            # 9. 피로 해소 가이드 제공
+            # 9. 피로 해소 가이드 제공 (원인 기반 맞춤 가이드)
             fatigue_level = fatigue_manager.get_fatigue_level()
-            if fatigue_level != "good":
+            if fatigue_level != "good" and not fatigue_manager.has_active_recovery:
                 guide_types = fatigue_manager.get_recommended_guide()
                 if guide_types:
                     # 5분에 한 번만 가이드 출력 (콘솔 스팸 방지)
                     if not hasattr(main, '_last_guide_time') or \
                        current_time - main._last_guide_time > 300:
-                        recovery_guide.display_guides_for_level(fatigue_level)
+                        dominant_cause = fatigue_manager.get_dominant_cause()
+                        recovery_guide.display_guides_for_level(
+                            fatigue_level, guide_types, dominant_cause,
+                        )
                         main._last_guide_time = current_time
+
+                        # 회복 세션 시작 (가이드 중 최대 소요 시간 사용)
+                        guides_data = recovery_guide.get_guides_for_level(
+                            fatigue_level, guide_types,
+                        )
+                        max_duration = max(
+                            (g.get("duration_sec", 60) for g in guides_data),
+                            default=60,
+                        )
+                        fatigue_manager.start_recovery_session(
+                            guide_types, drowsiness_score, max_duration,
+                        )
+
+            # 9-1. 회복 세션 진행 및 효과 검증
+            if fatigue_manager.has_active_recovery:
+                recovery_result = fatigue_manager.update_recovery_session(
+                    drowsiness_score, ear_value, mar_value,
+                )
+                if recovery_result and "effective" in recovery_result:
+                    # 회복 결과를 DB에 기록
+                    db_writer.save_recovery_action({
+                        "guide_type": ",".join(recovery_result["guide_types"]),
+                        "fatigue_before": int(recovery_result["fatigue_before"]),
+                        "fatigue_after": int(recovery_result["fatigue_after"]),
+                        "duration_sec": recovery_result["duration_sec"],
+                        "effective": recovery_result["effective"],
+                    })
+                    if not recovery_result["effective"]:
+                        print("[recovery] 추가 휴식이 필요합니다. "
+                              "더 강한 회복 조치를 권장합니다.")
 
             # 10. DB 저장 (주기적)
             if current_time - last_db_save >= config.DB_SAVE_INTERVAL:
