@@ -148,7 +148,7 @@ DUMMY_HUMIDITY = 50.0
 # ──────────────────────────────────────────────
 LLM_ENABLED = True                        # False로 끄면 정적 가이드만 사용
 LLM_HOST = "http://127.0.0.1:11434"       # Ollama 기본 포트
-LLM_MODEL = "gemma4:e4b"                      # `ollama list`의 정확한 태그로 조정 (예: gemma4:4b)
+LLM_MODEL = "qwen2.5:14b"                 # RTX 5070 Ti + 48GB RAM 기준 최적. 경량: gemma3:4b
 LLM_TIMEOUT = 30                          # 초
 LLM_COOLDOWN = 300                        # 같은 코칭 반복 방지 (초)
 LLM_MAX_TOKENS = 400                      # 응답 최대 토큰

@@ -1,48 +1,68 @@
 # AIoT 기반 졸음 및 집중력 저하 방지 시스템
 
-## 실행 방법
+## 실행 방법 (WSL2 + Docker Desktop, 하이브리드 구성)
 
-### 1. Python 패키지 설치
+웹캠/GUI가 필요한 `main.py`는 **WSL 호스트에서 직접 실행**하고, **MySQL + Ollama만 Docker 컨테이너**로 띄우는 방식입니다.
+
+### 0. 사전 준비 (Windows → WSL 이전 시)
+1. Windows 11 + Docker Desktop 설치 후 **Settings → Resources → WSL Integration**에서 사용할 배포판(Ubuntu 등) 활성화
+2. Windows에서 WSL로 프로젝트 복사:
+   ```powershell
+   # PowerShell 에서 (예: Windows 경로 → WSL 홈)
+   wsl cp -r /mnt/c/Users/<USER>/Desktop/capstone ~/capstone
+   ```
+   > ⚠️ 성능상 반드시 `/home/<user>/` 아래(ext4)로 옮기세요. `/mnt/c` 아래서 실행하면 파일 I/O가 매우 느립니다.
+3. 웹캠 사용이 필요하면 [usbipd-win](https://github.com/dorssel/usbipd-win)으로 USB 패스스루 설정 (`usbipd list` → `usbipd bind` → `usbipd attach --wsl`).
+
+### 1. Python 가상환경 + 패키지 설치 (WSL)
 ```bash
+sudo apt update && sudo apt install -y python3-venv python3-pip libgl1 libglib2.0-0
+python3 -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
 ```
 
 ### 2. MediaPipe 모델 다운로드
-`models/` 폴더에 face_landmarker 모델이 필요합니다.
 ```bash
-mkdir models
+mkdir -p models
 curl -L -o models/face_landmarker.task "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task"
 ```
 
-### 3. 로컬 LLM (Ollama) 설치 (선택사항 - 데스크탑 전용)
-
-AI 기반 개인화 졸음 관리 코칭을 사용하려면 Ollama 설치가 필요합니다.
-설치하지 않아도 시스템은 정적 가이드로 정상 동작합니다.
-
+### 3. `.env` 파일 생성
 ```bash
-# Ollama 설치 (Linux/macOS)
-curl -fsSL https://ollama.com/install.sh | sh
-
-# 모델 다운로드 (config.py의 LLM_MODEL과 일치해야 함)
-ollama pull gemma4           # 설치된 정확한 태그로 조정 (예: gemma4:4b)
-
-# Ollama 서버는 설치 후 자동 실행됨. 수동 실행:
-ollama serve
+cp .env.example .env
+# 필요 시 값 수정 (DB_PASSWORD 등)
 ```
 
-LLM 코칭을 끄려면 [config.py](config.py)에서 `LLM_ENABLED = False`로 설정.
-
-### 4. MySQL 데이터베이스 설정 (선택사항)
+### 4. Docker로 MySQL + Ollama 실행
 ```bash
-mysql -u root -p < sql/schema.sql
+docker compose up -d
+docker compose ps           # 상태 확인
+docker compose logs -f mysql  # 초기화 로그 (schema.sql 자동 실행)
 ```
-> DB 없이도 실행 가능합니다 (경고 메시지 출력 후 정상 동작).
+- MySQL: `localhost:3306` (schema.sql은 최초 실행 시 자동 적용됨)
+- Ollama: `localhost:11434`
 
-### 5. 실행
+### 5. Ollama 모델 pull (최초 1회)
 ```bash
+docker exec -it capstone-ollama ollama pull qwen2.5:14b
+# 경량 대안: docker exec -it capstone-ollama ollama pull gemma3:4b
+```
+> `config.py`의 `LLM_MODEL` 값과 일치해야 합니다. LLM을 끄려면 `LLM_ENABLED = False`.
+
+### 6. 메인 실행 (WSL 호스트)
+```bash
+source venv/bin/activate
 python main.py
 ```
 종료: `q` 키 또는 `Ctrl+C`
+
+### 컨테이너 관리
+```bash
+docker compose stop          # 중지 (데이터 유지)
+docker compose down          # 컨테이너 제거 (볼륨은 유지)
+docker compose down -v       # 볼륨까지 삭제 (DB/모델 초기화)
+```
 
 ---
 
@@ -68,12 +88,30 @@ python main.py
   - 다른 프로그램(Zoom, Teams 등)이 카메라를 사용 중이면 종료
 
 ### 에러 5: `MySQL 연결 실패: Can't connect to MySQL server on 'localhost'`
-- **원인**: MySQL/MariaDB 서버가 실행되지 않음
+- **원인**: MySQL 컨테이너 미실행 또는 `.env` 설정 불일치
 - **해결**:
-  - MySQL 설치 및 시작: `net start mysql` (Windows) 또는 `sudo systemctl start mariadb` (Linux)
-  - `sql/schema.sql` 실행하여 DB 및 테이블 생성
-  - `config.py`에서 `DB_HOST`, `DB_USER`, `DB_PASSWORD` 확인
+  - `docker compose ps` 로 `capstone-mysql` 이 `healthy` 인지 확인
+  - `docker compose logs mysql` 로 초기화 오류 확인
+  - `.env` 의 `DB_USER` / `DB_PASSWORD` / `DB_NAME` 이 컴포즈 기동 시 값과 같은지 확인 (비밀번호를 바꿨다면 `docker compose down -v` 로 볼륨을 지우고 재기동)
   - DB 없이도 AI 감지 기능은 정상 동작 (로그 저장만 건너뜀)
+
+### 에러 6: `Ollama 연결 실패` / LLM 코칭 미동작
+- **원인**: Ollama 컨테이너 미실행 또는 모델 미 pull
+- **해결**:
+  - `docker compose ps` 로 `capstone-ollama` 상태 확인
+  - `docker exec -it capstone-ollama ollama list` 로 설치된 모델 확인
+  - 모델이 없으면 `docker exec -it capstone-ollama ollama pull qwen2.5:14b`
+
+### 에러 7: WSL에서 웹캠이 잡히지 않음 (`Camera ret=False`)
+- **원인**: WSL2는 기본적으로 Windows USB 장치에 접근 불가
+- **해결**:
+  - [usbipd-win](https://github.com/dorssel/usbipd-win) 설치 후 관리자 PowerShell에서:
+    ```powershell
+    usbipd list                           # BUSID 확인
+    usbipd bind --busid <BUSID>
+    usbipd attach --wsl --busid <BUSID>
+    ```
+  - WSL 쪽에서 `ls /dev/video*` 로 장치 인식 확인
 
 ---
 

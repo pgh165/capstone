@@ -21,12 +21,12 @@ class TestEnvironmentScore(unittest.TestCase):
         self.assertEqual(self.judge._score_co2(800), 0)
 
     def test_co2_moderate(self):
-        """CO₂ 800~1000ppm → 30점"""
-        self.assertEqual(self.judge._score_co2(900), 30)
+        """CO₂ 1000ppm → 30점 (breakpoint)"""
+        self.assertEqual(self.judge._score_co2(1000), 30)
 
     def test_co2_bad(self):
-        """CO₂ 1000~1500ppm → 60점"""
-        self.assertEqual(self.judge._score_co2(1200), 60)
+        """CO₂ 1500ppm → 60점 (breakpoint)"""
+        self.assertEqual(self.judge._score_co2(1500), 60)
 
     def test_co2_very_bad(self):
         """CO₂ 1500ppm 이상 → 100점"""
@@ -42,12 +42,12 @@ class TestEnvironmentScore(unittest.TestCase):
         self.assertEqual(self.judge._score_temperature(22), 0)
 
     def test_temp_slightly_high(self):
-        """24~26°C → 40점"""
-        self.assertEqual(self.judge._score_temperature(25), 40)
+        """26°C → 40점 (breakpoint)"""
+        self.assertEqual(self.judge._score_temperature(26), 40)
 
     def test_temp_drowsy(self):
-        """26~28°C → 70점"""
-        self.assertEqual(self.judge._score_temperature(27), 70)
+        """28°C → 70점 (breakpoint)"""
+        self.assertEqual(self.judge._score_temperature(28), 70)
 
     def test_temp_very_high(self):
         """28°C 이상 → 100점"""
@@ -59,12 +59,12 @@ class TestEnvironmentScore(unittest.TestCase):
         self.assertEqual(self.judge._score_humidity(50), 0)
 
     def test_humidity_slightly_high(self):
-        """60~70%RH → 40점"""
-        self.assertEqual(self.judge._score_humidity(65), 40)
+        """70%RH → 40점 (breakpoint)"""
+        self.assertEqual(self.judge._score_humidity(70), 40)
 
     def test_humidity_uncomfortable(self):
-        """70%RH 이상 → 80점"""
-        self.assertEqual(self.judge._score_humidity(75), 80)
+        """80%RH → 80점 (breakpoint)"""
+        self.assertEqual(self.judge._score_humidity(80), 80)
 
     # ── 종합 환경 점수 테스트 ──
     def test_env_score_all_comfortable(self):
