@@ -7,9 +7,9 @@
 | 프로젝트명 | AIoT 기반 졸음 및 집중력 저하 방지 시스템 |
 | 전공 | 임베디드 소프트웨어 |
 | 개발 인원 | 1인 |
-| 핵심 기술 | Raspberry Pi, MediaPipe, OpenCV, LAMP Stack, GPIO |
+| 핵심 기술 | Raspberry Pi, MediaPipe, OpenCV, LAMP Stack, GPIO, 로컬 LLM (Ollama) |
 
-본 프로젝트는 Raspberry Pi에 카메라와 환경 센서를 연결하여 사용자의 얼굴을 실시간으로 분석하고, AI 기반 졸음 및 집중력 저하를 감지하여 단계적 경고를 출력하는 임베디드 AIoT 시스템이다. 다중 센서 융합(EAR, MAR, Head Pose, CO₂, 온도, 습도)을 통해 종합적으로 졸음 상태를 판단하고, 누적 피로도를 추적하여 단계별 피로 해소 가이드를 제공한다. LAMP 스택 기반 웹 서버를 통해 감지 이력, 피로도 리포트 및 환경 데이터를 대시보드 형태로 제공한다.
+본 프로젝트는 Raspberry Pi에 카메라와 환경 센서를 연결하여 사용자의 얼굴을 실시간으로 분석하고, AI 기반 졸음 및 집중력 저하를 감지하여 단계적 경고를 출력하는 임베디드 AIoT 시스템이다. 다중 센서 융합(EAR, MAR, Head Pose, CO₂, 온도, 습도)을 통해 종합적으로 졸음 상태를 판단하고, 누적 피로도를 추적하여 단계별 피로 해소 가이드를 제공한다. 또한 데스크탑 환경에서는 **로컬 LLM(Ollama)**을 연동하여 개인 상태·원인·회복 이력을 반영한 **맞춤형 대화체 코칭**을 제공한다. LAMP 스택 기반 웹 서버를 통해 감지 이력, 피로도 리포트 및 환경 데이터를 대시보드 형태로 제공한다.
 
 ### 1.1 목적
 
@@ -20,7 +20,8 @@
 1. **다중 센서 융합 분석**: 카메라 영상(EAR, MAR, Head Pose)과 환경 센서(CO₂, 온도, 습도)를 종합적으로 분석하여 단일 센서 대비 높은 감지 정확도를 달성한다.
 2. **능동적 피로 관리**: 졸음을 감지하는 것에 그치지 않고, 누적 피로도를 추적하고 피로 단계에 맞는 해소 가이드(스트레칭, 호흡법, 환기 권고 등)를 제공하여 근본적인 집중력 유지를 돕는다.
 3. **엣지 AI 기반 임베디드 시스템 구현**: 클라우드에 의존하지 않고 Raspberry Pi 단독으로 AI 추론, 센서 제어, 웹 서버를 운영하여 네트워크 없이도 동작하는 자립형 시스템을 구현한다.
-4. **웹 기반 모니터링**: LAMP 스택 웹 대시보드를 통해 실시간 상태, 이력 조회, 환경 추이 차트 등을 제공한다.
+4. **로컬 LLM 기반 개인화 코칭**: 외부 API 의존 없이 Ollama 기반 로컬 LLM을 활용하여 개인 상태(피로 원인, 작업시간, 환경, 회복 이력)를 반영한 맞춤형 졸음 관리 조언을 제공한다. 프라이버시 보호와 네트워크 독립성을 동시에 달성한다.
+5. **웹 기반 모니터링**: LAMP 스택 웹 대시보드를 통해 실시간 상태, 이력 조회, 환경 추이 차트 등을 제공한다.
 
 ---
 
@@ -40,6 +41,7 @@ graph TB
         MP["MediaPipe FaceLandmarker<br/>478개 얼굴 랜드마크 추출"]
         ALG["졸음 판단 모듈<br/>EAR + MAR + Head Pose + 환경"]
         FATIGUE["피로도 관리 모듈<br/>누적 피로 추적 + 해소 가이드"]
+        LLM["🤖 로컬 LLM 코치<br/>Ollama 개인화 조언<br/>(데스크탑 전용)"]
         GPIO["GPIO 제어 모듈<br/>경고 출력 관리"]
         PYTHON["Python 데이터 수집기<br/>분석 결과 → DB 저장"]
     end
@@ -60,9 +62,11 @@ graph TB
     DHT --> ALG
     MP --> ALG
     ALG --> FATIGUE
+    FATIGUE --> LLM
     FATIGUE --> GPIO
     FATIGUE --> PYTHON
     PYTHON --> MYSQL
+    MYSQL --> LLM
     GPIO --> LED
     GPIO --> BUZ
     MYSQL --> PHP
@@ -147,7 +151,8 @@ graph LR
     subgraph OUTPUT["출력 모듈"]
         C1["alert.py<br/>GPIO 경고 제어"]
         C2["db_writer.py<br/>MySQL 데이터 저장"]
-        C3["recovery_guide.py<br/>피로 해소 가이드"]
+        C3["recovery_guide.py<br/>피로 해소 가이드 (정적)"]
+        C5["llm_coach.py<br/>로컬 LLM 개인화 코칭 (비동기)"]
         C4["Apache + PHP<br/>웹 대시보드"]
     end
 
@@ -161,6 +166,7 @@ graph LR
     B5 --> C1
     B5 --> C2
     B5 --> C3
+    B5 --> C5
     C2 --> C4
 
     style INPUT fill:#E1F5EE,stroke:#0F6E56,color:#04342C
@@ -691,6 +697,97 @@ flowchart TD
   walk:      4/4  = 100% → 보너스 추천 (다른 원인에서도 추가)
 ```
 
+### 5.6 로컬 LLM 기반 개인화 코칭 (LLMCoach)
+
+정적 가이드(`guides.json`)만으로는 개인의 상황·맥락을 반영하기 어렵다는 한계가 있어, **데스크탑 전용**으로 Ollama 기반 로컬 LLM을 연동하여 피로 상태·원인·환경·회복 이력을 종합한 대화체 조언을 생성한다.
+
+```mermaid
+flowchart LR
+    subgraph CTX["컨텍스트 수집"]
+        X1["피로 단계 / 점수"]
+        X2["주된 원인 (work/drowsy/env)"]
+        X3["연속 작업 시간"]
+        X4["최근 30분 졸음 횟수"]
+        X5["CO₂/온도/습도"]
+        X6["가이드별 성공률 이력"]
+    end
+
+    subgraph LLM["로컬 LLM (Ollama)"]
+        P["프롬프트 구성<br/>(SYSTEM + 사용자 상태)"]
+        M["Gemma / Qwen 모델<br/>(127.0.0.1:11434)"]
+        R["응답 생성<br/>(4~6문장 한국어 조언)"]
+        P --> M --> R
+    end
+
+    subgraph ASYNC["비동기 실행"]
+        TH["백그라운드 스레드<br/>(메인 루프 무차단)"]
+        CD["쿨다운 300초<br/>(반복 방지)"]
+        FB["Ollama 미가동 시<br/>자동 비활성화"]
+    end
+
+    CTX --> P
+    TH --> M
+    R --> DISPLAY["콘솔 박스 출력<br/>(메인 루프에서 폴링)"]
+
+    style CTX fill:#EEEDFE,stroke:#534AB7,color:#26215C
+    style LLM fill:#F5F0FF,stroke:#7C3AED,color:#3B1F7A
+    style ASYNC fill:#FAEEDA,stroke:#854F0B,color:#412402
+    style DISPLAY fill:#E1F5EE,stroke:#0F6E56,color:#04342C
+```
+
+```
+LLM 코칭 시스템 특징:
+
+1. 로컬 실행 (프라이버시 + 오프라인 동작)
+   - Ollama HTTP API (127.0.0.1:11434) 사용
+   - 외부 전송 없음 → 생체 데이터 보안 확보
+   - 네트워크 없이도 동작
+
+2. 비동기 처리 (실시간 성능 보장)
+   - 별도 데몬 스레드에서 LLM 호출 (timeout 30초)
+   - 메인 감지 루프(30fps)는 차단되지 않음
+   - 응답은 매 루프에서 poll_result()로 수거
+
+3. 컨텍스트 기반 개인화
+   - 피로 단계·원인·작업시간·졸음 횟수·환경 수치
+   - 과거 회복 이력 요약 (가이드별 N/M 성공률)
+   - SYSTEM 프롬프트로 어조 일관성 유지
+     ("4~6문장, 공감 먼저, 구체적 행동 1~2개 제안")
+
+4. 장애 허용 (Graceful Fallback)
+   - Ollama 서버 미가동 → 자동 비활성화, 정적 가이드만 사용
+   - 모델 미설치 → 경고 후 비활성화
+   - 응답 타임아웃 → 무시하고 다음 사이클 진행
+
+5. 쿨다운 (콘솔 스팸 방지)
+   - 마지막 요청으로부터 300초(5분) 경과 전 요청 무시
+   - 기본 가이드 출력 쿨다운과 동일한 주기
+
+사용 모델 권장사항 (config.LLM_MODEL):
+  - 경량: gemma3:4b / qwen2.5:3b (RAM 4GB+)
+  - 균형: gemma2:9b / qwen2.5:7b (RAM 8GB+)
+  - 데스크탑 전용이므로 RPi에서는 비활성화 (LLM_ENABLED = False)
+```
+
+#### 프롬프트 예시
+
+```
+SYSTEM: 당신은 사용자의 졸음과 피로를 실시간으로 관리하는 헬스 코치입니다.
+얼굴 감지(EAR/MAR), 연속 작업 시간, 환경 센서(CO2/온도/습도),
+과거 회복 이력을 참고해서 한국어로 간결하고 친근하게 조언합니다. ...
+
+USER:
+현재 피로 단계: 경고 (점수 78/100)
+주된 피로 원인: 장시간 연속 작업
+연속 작업 시간: 95분
+최근 30분 졸음 감지 횟수: 7회
+CO2: 1150ppm, 온도: 27°C, 습도: 55%
+현재 권장 가이드: stretching, eye_rest, walk, hydration
+과거 회복 효과 이력 요약: eye_rest=8/10, breathing=3/5, walk=4/4
+
+위 상황에 맞는 개인화된 졸음 관리 조언을 작성해 주세요.
+```
+
 ---
 
 ## 6. 웹 서버 (LAMP 스택)
@@ -974,7 +1071,8 @@ capstone_project/
 │   ├── env_sensor.py          # CO₂ (MH-Z19B) + 온습도 (DHT22) + 센서 캐싱
 │   ├── judge.py               # 종합 졸음 판단 (가중 합산 + EMA 스무딩)
 │   ├── fatigue_manager.py     # 피로도 추적 + 해소 가이드 추천
-│   ├── recovery_guide.py      # 피로 해소 가이드 데이터 및 출력
+│   ├── recovery_guide.py      # 피로 해소 가이드 데이터 및 출력 (정적)
+│   ├── llm_coach.py           # 로컬 LLM(Ollama) 개인화 코칭 (비동기, 데스크탑 전용)
 │   ├── alert.py               # GPIO 경고 출력 제어 (LED + 부저)
 │   └── db_writer.py           # MySQL 데이터 저장
 │
@@ -1031,6 +1129,8 @@ capstone_project/
 | pyserial | 3.5+ | MH-Z19B UART 통신 |
 | Adafruit_DHT | 1.4+ | DHT22 센서 읽기 |
 | NumPy | 1.24+ | 수치 계산 |
+| Ollama | 0.3+ | 로컬 LLM 런타임 (데스크탑 전용, 개인화 코칭) |
+| Gemma / Qwen | 3B~9B | 한국어 대응 경량 LLM (Ollama 모델) |
 
 ### 10.2 웹 서버 (LAMP 스택)
 
@@ -1052,6 +1152,7 @@ capstone_project/
 - 실시간 처리 속도: 10\~15fps (RPi 4 기준)
 - 경고 응답 시간: 졸음 감지 후 1초 이내
 - 피로 해소 가이드 효과: 가이드 제공 후 졸음 점수 20% 이상 감소 목표
+- LLM 코칭 응답 지연: 2~8초 (데스크탑, 로컬 실행 / 메인 루프 무차단)
 
 ### 향후 확장
 - **개인화 시스템**: 캘리브레이션을 통한 개인별 baseline 측정 및 비율 기반 졸음 판단 (고정 임계값 → 개인 맞춤 임계값)
