@@ -14,13 +14,31 @@ mkdir models
 curl -L -o models/face_landmarker.task "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task"
 ```
 
-### 3. MySQL 데이터베이스 설정 (선택사항)
+### 3. 로컬 LLM (Ollama) 설치 (선택사항 - 데스크탑 전용)
+
+AI 기반 개인화 졸음 관리 코칭을 사용하려면 Ollama 설치가 필요합니다.
+설치하지 않아도 시스템은 정적 가이드로 정상 동작합니다.
+
+```bash
+# Ollama 설치 (Linux/macOS)
+curl -fsSL https://ollama.com/install.sh | sh
+
+# 모델 다운로드 (config.py의 LLM_MODEL과 일치해야 함)
+ollama pull gemma4           # 설치된 정확한 태그로 조정 (예: gemma4:4b)
+
+# Ollama 서버는 설치 후 자동 실행됨. 수동 실행:
+ollama serve
+```
+
+LLM 코칭을 끄려면 [config.py](config.py)에서 `LLM_ENABLED = False`로 설정.
+
+### 4. MySQL 데이터베이스 설정 (선택사항)
 ```bash
 mysql -u root -p < sql/schema.sql
 ```
 > DB 없이도 실행 가능합니다 (경고 메시지 출력 후 정상 동작).
 
-### 4. 실행
+### 5. 실행
 ```bash
 python main.py
 ```
@@ -90,7 +108,8 @@ capstone_project/
 │   ├── env_sensor.py       # 환경 센서 (CO2/온습도)
 │   ├── judge.py            # 종합 졸음 판단
 │   ├── fatigue_manager.py  # 피로도 관리
-│   ├── recovery_guide.py   # 피로 해소 가이드
+│   ├── recovery_guide.py   # 피로 해소 가이드 (정적)
+│   ├── llm_coach.py        # 로컬 LLM 개인화 코칭 (Ollama)
 │   ├── alert.py            # GPIO 경고 출력
 │   └── db_writer.py        # MySQL 저장
 ├── data/guides.json        # 피로 해소 가이드 데이터

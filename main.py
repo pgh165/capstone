@@ -34,6 +34,7 @@ from modules.env_sensor import EnvironmentSensor
 from modules.judge import DrowsinessJudge
 from modules.fatigue_manager import FatigueManager
 from modules.recovery_guide import RecoveryGuide
+from modules.llm_coach import LLMCoach
 from modules.alert import AlertController
 from modules.db_writer import DBWriter
 
@@ -97,6 +98,7 @@ def main():
     judge = DrowsinessJudge()
     fatigue_manager = FatigueManager()
     recovery_guide = RecoveryGuide()
+    llm_coach = LLMCoach()
     alert_controller = AlertController()
     db_writer = DBWriter()
 
@@ -203,6 +205,29 @@ def main():
                         )
                         main._last_guide_time = current_time
 
+                        # LLM 개인화 코칭 비동기 요청
+                        profile_stats = (
+                            fatigue_manager.recovery_profile.get_stats_summary()
+                        )
+                        history_summary = ", ".join(
+                            f"{gt}={s['success']}/{s['total']}"
+                            for gt, s in profile_stats.items()
+                        ) if profile_stats else ""
+                        llm_coach.request_coaching({
+                            "fatigue_level": fatigue_level,
+                            "fatigue_score": fatigue_status['fatigue_score'],
+                            "dominant_cause": dominant_cause,
+                            "guide_types": guide_types,
+                            "work_min": fatigue_status['continuous_work_min'],
+                            "drowsy_count": fatigue_status['drowsy_count_30min'],
+                            "env": {
+                                "co2": env_data['co2'],
+                                "temp": env_data['temperature'],
+                                "humid": env_data['humidity'],
+                            },
+                            "recovery_history_summary": history_summary,
+                        })
+
                         # 회복 세션 시작 (가이드 중 최대 소요 시간 사용)
                         guides_data = recovery_guide.get_guides_for_level(
                             fatigue_level, guide_types,
@@ -240,6 +265,11 @@ def main():
                     if not recovery_result["effective"]:
                         print("[recovery] 추가 휴식이 필요합니다. "
                               "더 강한 회복 조치를 권장합니다.")
+
+            # 9-2. LLM 코칭 결과 폴링 (비동기 응답 도착 시 출력)
+            llm_result = llm_coach.poll_result()
+            if llm_result:
+                llm_coach.display(llm_result)
 
             # 10. DB 저장 (주기적)
             if current_time - last_db_save >= config.DB_SAVE_INTERVAL:
