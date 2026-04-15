@@ -9,12 +9,27 @@ AIoT 기반 졸음 및 집중력 저하 방지 시스템
 import sys
 import time
 import os
+import select
 
 # 헤드리스 모드 감지 (SSH 등 디스플레이 없는 환경)
 HEADLESS = 'DISPLAY' not in os.environ and sys.platform != 'win32'
 if HEADLESS:
     os.environ['OPENCV_VIDEOIO_PRIORITY_MSMF'] = '0'
-    print('[system] 헤드리스 모드 (GUI 없음, Ctrl+C로 종료)')
+    print('[system] 헤드리스 모드 (GUI 없음, q+Enter 또는 Ctrl+C로 종료)')
+
+
+def _stdin_has_quit():
+    """HEADLESS 모드에서 stdin을 비차단으로 확인해 q 입력 시 True 반환."""
+    try:
+        ready, _, _ = select.select([sys.stdin], [], [], 0)
+        if ready:
+            line = sys.stdin.readline()
+            if line and line.strip().lower() in ('q', 'quit', 'exit'):
+                return True
+    except (ValueError, OSError):
+        # stdin이 없거나(daemon 등) 오류 시 무시
+        pass
+    return False
 
 # Windows 환경 한글 출력 설정
 if sys.platform == 'win32':
@@ -115,6 +130,7 @@ def main():
     last_db_save = time.time()
     last_fatigue_log = time.time()
     last_profile_refresh = time.time()
+    last_guide_time = 0.0
     frame_count = 0
 
     try:
@@ -197,13 +213,12 @@ def main():
                 guide_types = fatigue_manager.get_recommended_guide()
                 if guide_types:
                     # 5분에 한 번만 가이드 출력 (콘솔 스팸 방지)
-                    if not hasattr(main, '_last_guide_time') or \
-                       current_time - main._last_guide_time > 300:
+                    if current_time - last_guide_time > 300:
                         dominant_cause = fatigue_manager.get_dominant_cause()
                         recovery_guide.display_guides_for_level(
                             fatigue_level, guide_types, dominant_cause,
                         )
-                        main._last_guide_time = current_time
+                        last_guide_time = current_time
 
                         # LLM 개인화 코칭 비동기 요청
                         profile_stats = (
@@ -328,6 +343,10 @@ def main():
                           f"졸음={int(drowsiness_score)}(L{alert_level}-{level_names.get(alert_level,'?')}) "
                           f"피로={int(fatigue_status['fatigue_score'])}({fatigue_status['fatigue_level']}) "
                           f"CO2={env_data['co2']}ppm T={env_data['temperature']}C")
+                # stdin에서 q 입력 감지
+                if _stdin_has_quit():
+                    print("\n[main] 종료 요청 (stdin)")
+                    break
                 time.sleep(0.03)  # CPU 부하 방지
             else:
                 # GUI 모드: 화면에 정보 오버레이

@@ -47,7 +47,9 @@ class FaceDetector:
             output_facial_transformation_matrixes=False,
         )
         self.landmarker = FaceLandmarker.create_from_options(options)
-        self._frame_timestamp_ms = 0
+        # MediaPipe VIDEO 모드는 단조 증가 타임스탬프 필요. 실제 시간 기반으로 추적.
+        self._start_time = time.time()
+        self._last_timestamp_ms = -1
 
         # 얼굴 미검출 추적
         self.no_face_start_time = None
@@ -65,8 +67,12 @@ class FaceDetector:
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
 
-        self._frame_timestamp_ms += 33  # ~30fps
-        result = self.landmarker.detect_for_video(mp_image, self._frame_timestamp_ms)
+        # 실제 경과 시간(ms). 단조 증가 보장 (같거나 작으면 +1)
+        ts = int((time.time() - self._start_time) * 1000)
+        if ts <= self._last_timestamp_ms:
+            ts = self._last_timestamp_ms + 1
+        self._last_timestamp_ms = ts
+        result = self.landmarker.detect_for_video(mp_image, ts)
 
         if result.face_landmarks and len(result.face_landmarks) > 0:
             self.no_face_start_time = None
