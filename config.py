@@ -187,3 +187,7 @@ if _env:
     DB_NAME = _env.get('DB_NAME', DB_NAME)
     if 'DB_PORT' in _env:
         DB_PORT = int(_env['DB_PORT'])
+
+# 환경변수 직접 주입 (Docker Compose environment 섹션)이 .env보다 우선
+DB_HOST = os.environ.get('DB_HOST', DB_HOST)
+LLM_HOST = os.environ.get('LLM_HOST', LLM_HOST)

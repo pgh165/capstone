@@ -7,9 +7,9 @@
 | 프로젝트명 | AIoT 기반 졸음 및 집중력 저하 방지 시스템 |
 | 전공 | 임베디드 소프트웨어 |
 | 개발 인원 | 1인 |
-| 핵심 기술 | Raspberry Pi, MediaPipe, OpenCV, LAMP Stack, GPIO, 로컬 LLM (Ollama) |
+| 핵심 기술 | Raspberry Pi, MediaPipe, OpenCV, Django, Docker, GPIO, 로컬 LLM (Ollama) |
 
-본 프로젝트는 Raspberry Pi에 카메라와 환경 센서를 연결하여 사용자의 얼굴을 실시간으로 분석하고, AI 기반 졸음 및 집중력 저하를 감지하여 단계적 경고를 출력하는 임베디드 AIoT 시스템이다. 다중 센서 융합(EAR, MAR, Head Pose, CO₂, 온도, 습도)을 통해 종합적으로 졸음 상태를 판단하고, 누적 피로도를 추적하여 단계별 피로 해소 가이드를 제공한다. 또한 데스크탑 환경에서는 **로컬 LLM(Ollama)**을 연동하여 개인 상태·원인·회복 이력을 반영한 **맞춤형 대화체 코칭**을 제공한다. LAMP 스택 기반 웹 서버를 통해 감지 이력, 피로도 리포트 및 환경 데이터를 대시보드 형태로 제공한다.
+본 프로젝트는 Raspberry Pi에 카메라와 환경 센서를 연결하여 사용자의 얼굴을 실시간으로 분석하고, AI 기반 졸음 및 집중력 저하를 감지하여 단계적 경고를 출력하는 임베디드 AIoT 시스템이다. 다중 센서 융합(EAR, MAR, Head Pose, CO₂, 온도, 습도)을 통해 종합적으로 졸음 상태를 판단하고, 누적 피로도를 추적하여 단계별 피로 해소 가이드를 제공한다. 또한 데스크탑 환경에서는 **로컬 LLM(Ollama)**을 연동하여 개인 상태·원인·회복 이력을 반영한 **맞춤형 대화체 코칭**을 제공한다. **Django** 기반 웹 서버를 통해 감지 이력, 피로도 리포트 및 환경 데이터를 대시보드 형태로 제공하며, 전체 서비스는 **Docker Compose**로 컨테이너화하여 운영한다.
 
 ### 1.1 목적
 
@@ -21,7 +21,7 @@
 2. **능동적 피로 관리**: 졸음을 감지하는 것에 그치지 않고, 누적 피로도를 추적하고 피로 단계에 맞는 해소 가이드(스트레칭, 호흡법, 환기 권고 등)를 제공하여 근본적인 집중력 유지를 돕는다.
 3. **엣지 AI 기반 임베디드 시스템 구현**: 클라우드에 의존하지 않고 Raspberry Pi 단독으로 AI 추론, 센서 제어, 웹 서버를 운영하여 네트워크 없이도 동작하는 자립형 시스템을 구현한다.
 4. **로컬 LLM 기반 개인화 코칭**: 외부 API 의존 없이 Ollama 기반 로컬 LLM을 활용하여 개인 상태(피로 원인, 작업시간, 환경, 회복 이력)를 반영한 맞춤형 졸음 관리 조언을 제공한다. 프라이버시 보호와 네트워크 독립성을 동시에 달성한다.
-5. **웹 기반 모니터링**: LAMP 스택 웹 대시보드를 통해 실시간 상태, 이력 조회, 환경 추이 차트 등을 제공한다.
+5. **웹 기반 모니터링**: Django 웹 대시보드를 통해 실시간 상태, 이력 조회, 환경 추이 차트 등을 제공한다.
 
 ---
 
@@ -46,10 +46,10 @@ graph TB
         PYTHON["Python 데이터 수집기<br/>분석 결과 → DB 저장"]
     end
 
-    subgraph LAMP["🌐 LAMP 웹 서버 (RPi 내장)"]
-        APACHE["Apache 2<br/>웹 서버"]
-        PHP["PHP 8.x<br/>백엔드 API"]
-        MYSQL["MySQL / MariaDB<br/>이력 저장"]
+    subgraph WEB["🌐 Django 웹 서버 (Docker)"]
+        DJANGO["Django 4.x<br/>백엔드 API + 대시보드"]
+        MYSQL["MySQL 8.0<br/>이력 저장 (Docker)"]
+        OLLAMA_SVC["Ollama (Docker)<br/>로컬 LLM 서버"]
     end
 
     subgraph OUTPUT["⚠️ 경고 및 가이드 출력"]
@@ -69,27 +69,26 @@ graph TB
     MYSQL --> LLM
     GPIO --> LED
     GPIO --> BUZ
-    MYSQL --> PHP
-    PHP --> APACHE
+    MYSQL --> DJANGO
 
     style SENSOR fill:#E1F5EE,stroke:#0F6E56,color:#04342C
     style RPI fill:#EEEDFE,stroke:#534AB7,color:#26215C
-    style LAMP fill:#E6F1FB,stroke:#185FA5,color:#042C53
+    style WEB fill:#E6F1FB,stroke:#185FA5,color:#042C53
     style OUTPUT fill:#FAECE7,stroke:#993C1D,color:#4A1B0C
 ```
 
-### 2.2 LAMP 스택 데이터 흐름
+### 2.2 Django 데이터 흐름
 
 ```mermaid
 flowchart LR
-    subgraph PYTHON["Python (AI 엔진)"]
+    subgraph PYTHON["Python (AI 엔진 · Docker)"]
         P1["졸음 감지 결과"]
         P2["EAR / MAR / Head Pose"]
         P3["CO₂ / 온습도"]
         P4["피로도 점수"]
     end
 
-    subgraph MYSQL["MySQL / MariaDB"]
+    subgraph MYSQL["MySQL 8.0 (Docker)"]
         DB1["detection_logs<br/>감지 이력"]
         DB3["fatigue_logs<br/>피로도 이력"]
         DB4["recovery_actions<br/>피로 해소 기록"]
@@ -97,17 +96,17 @@ flowchart LR
         DB6["daily_summary<br/>일간 요약"]
     end
 
-    subgraph PHP["PHP API"]
-        API1["api/logs.php<br/>감지 이력 조회"]
-        API3["api/fatigue.php<br/>피로도 리포트"]
-        API4["api/recovery.php<br/>해소 가이드 이력"]
-        API5["api/environment.php<br/>환경 센서 이력"]
-        API6["api/settings.php<br/>설정 조회/변경"]
-        API7["api/daily_report.php<br/>일간 리포트"]
+    subgraph DJANGO["Django API (Docker · :8000)"]
+        API1["api/logs/<br/>감지 이력 조회"]
+        API3["api/fatigue/<br/>피로도 리포트"]
+        API4["api/recovery/<br/>해소 가이드 이력"]
+        API5["api/environment/<br/>환경 센서 이력"]
+        API6["api/settings/<br/>설정 조회/변경"]
+        API7["api/daily_report/<br/>일간 리포트"]
     end
 
     subgraph FRONT["프론트엔드"]
-        F1["index.php<br/>실시간 대시보드"]
+        F1["index.html (Django Template)<br/>실시간 대시보드"]
         F2["Chart.js<br/>추이 그래프"]
     end
 
@@ -127,7 +126,7 @@ flowchart LR
 
     style PYTHON fill:#EEEDFE,stroke:#534AB7,color:#26215C
     style MYSQL fill:#FAEEDA,stroke:#854F0B,color:#412402
-    style PHP fill:#E6F1FB,stroke:#185FA5,color:#042C53
+    style DJANGO fill:#E6F1FB,stroke:#185FA5,color:#042C53
     style FRONT fill:#E1F5EE,stroke:#0F6E56,color:#04342C
 ```
 
@@ -153,7 +152,7 @@ graph LR
         C2["db_writer.py<br/>MySQL 데이터 저장"]
         C3["recovery_guide.py<br/>피로 해소 가이드 (정적)"]
         C5["llm_coach.py<br/>로컬 LLM 개인화 코칭 (비동기)"]
-        C4["Apache + PHP<br/>웹 대시보드"]
+        C4["Django<br/>웹 대시보드 (Docker)"]
     end
 
     A1 --> B1
@@ -790,16 +789,17 @@ CO2: 1150ppm, 온도: 27°C, 습도: 55%
 
 ---
 
-## 6. 웹 서버 (LAMP 스택)
+## 6. 웹 서버 (Django + Docker)
 
-### 6.1 LAMP 스택 구성
+### 6.1 웹 서버 구성
 
-| 계층 | 기술 | 역할 |
-|------|------|------|
-| **L**inux | Raspberry Pi OS (Debian 기반) | 운영체제 |
-| **A**pache | Apache 2.4 | 웹 서버 |
-| **M**ySQL | MariaDB 10.x | 이력, 설정값 저장 |
-| **P**HP | PHP 8.x | 백엔드 API |
+| 컴포넌트 | 기술 | 역할 |
+|----------|------|------|
+| 웹 프레임워크 | Django 4.x | 백엔드 API + HTML 대시보드 |
+| 데이터베이스 | MySQL 8.0 (Docker) | 이력, 설정값 저장 |
+| LLM 서버 | Ollama (Docker) | 로컬 LLM 개인화 코칭 |
+| AI 엔진 | Python app (Docker) | 졸음 감지 + 피로 관리 |
+| 컨테이너 관리 | Docker Compose | 전체 서비스 통합 실행 |
 
 ### 6.2 데이터베이스 스키마
 
@@ -869,17 +869,17 @@ erDiagram
     }
 ```
 
-### 6.3 주요 PHP API 엔드포인트
+### 6.3 주요 Django API 엔드포인트
 
 | 엔드포인트 | 메서드 | 설명 |
 |------------|--------|------|
 | `/` | GET | 메인 페이지 (실시간 대시보드) |
-| `/api/logs.php` | GET | 감지 이력 목록 (페이징, 날짜 필터) |
-| `/api/fatigue.php` | GET | 피로도 이력 (today/week/month) |
-| `/api/recovery.php` | GET | 피로 해소 기록 및 효과 통계 |
-| `/api/environment.php` | GET | 환경 센서 이력 (CO₂/온도/습도) |
-| `/api/settings.php` | GET/POST | 임계값, 가중치 설정 조회/변경 |
-| `/api/daily_report.php` | GET | 일간 요약 리포트 (집계 또는 실시간) |
+| `/api/logs/` | GET | 감지 이력 목록 (페이징, 날짜 필터) |
+| `/api/fatigue/` | GET | 피로도 이력 (today/week/month) |
+| `/api/recovery/` | GET | 피로 해소 기록 및 효과 통계 |
+| `/api/environment/` | GET | 환경 센서 이력 (CO₂/온도/습도) |
+| `/api/settings/` | GET/POST | 임계값, 가중치 설정 조회/변경 |
+| `/api/daily_report/` | GET | 일간 요약 리포트 (집계 또는 실시간) |
 
 ### 6.4 웹 대시보드 기능
 
@@ -894,10 +894,10 @@ erDiagram
 ### 6.5 Python ↔ MySQL 연동 방식
 
 ```
-[Python AI 엔진] --INSERT--> [MySQL/MariaDB] --SELECT--> [PHP API] --JSON--> [웹 브라우저]
+[Python AI 엔진 (Docker)] --INSERT--> [MySQL (Docker)] --SELECT--> [Django API (Docker)] --JSON--> [웹 브라우저]
 ```
 
-Python과 PHP가 DB를 매개로 완전히 분리되어, 각각 독립적으로 개발·디버깅이 가능하다.
+Python AI 엔진과 Django가 DB를 매개로 완전히 분리되어, 각각 독립적으로 개발·디버깅이 가능하다. Docker Compose 네트워크로 서비스 간 통신하며, `DB_HOST=mysql`, `LLM_HOST=http://ollama:11434`로 설정한다.
 
 ---
 
@@ -936,7 +936,7 @@ flowchart TB
     subgraph PHASE4["4단계: 시스템 통합"]
         P4A["MySQL 스키마 설계 및 생성"]
         P4B["Python → MySQL 데이터 저장"]
-        P4C["PHP API 개발"]
+        P4C["Django API 개발"]
         P4D["웹 대시보드 UI 개발"]
         P4E["GPIO 단계별 경고 연동"]
         P4A --> P4B --> P4C --> P4D --> P4E
@@ -993,8 +993,8 @@ flowchart TB
 
 - MySQL 스키마 설계 및 전체 테이블 생성
 - Python → MySQL 데이터 저장 모듈 개발 (주기적 저장)
-- PHP REST API 개발 (이력, 피로도, 해소 기록, 환경, 설정, 일간 리포트)
-- Chart.js 기반 웹 대시보드 UI 개발
+- Django REST API 개발 (이력, 피로도, 해소 기록, 환경, 설정, 일간 리포트)
+- Chart.js 기반 웹 대시보드 UI 개발 (Django Template)
 - GPIO 단계별 경고 연동
 - **마일스톤**: 전체 파이프라인 동작 (감지 → 판단 → 경고 → DB → 웹 조회)
 
@@ -1014,7 +1014,7 @@ flowchart TB
 
 ```mermaid
 flowchart LR
-    DEV["🖥️ 데스크탑 개발<br/>웹캠으로 AI 알고리즘<br/>XAMPP로 LAMP 개발"] --> TEST["🧪 알고리즘 검증<br/>단위 테스트<br/>통합 동작 확인"]
+    DEV["🖥️ 데스크탑 개발<br/>웹캠으로 AI 알고리즘<br/>Docker Compose로 전체 실행"] --> TEST["🧪 알고리즘 검증<br/>단위 테스트<br/>통합 동작 확인"]
     TEST --> PORT["📦 RPi 이식<br/>카메라 + 센서 연결<br/>GPIO + LAMP 이전"]
     PORT --> DEMO["🎯 최종 시연<br/>임베디드 AIoT"]
 
@@ -1026,25 +1026,29 @@ flowchart LR
 
 - 코어 AI 로직은 데스크탑에서 웹캠으로 먼저 개발
 - 환경 센서는 데스크탑에서 더미 데이터로 테스트 후 RPi에서 실제 연결
-- LAMP 웹 파트는 XAMPP로 병행 개발
+- Django 웹 파트는 Docker Compose로 병행 개발 (`docker compose up -d`)
 - 카메라 입력부, GPIO, 센서 통신부만 RPi에서 조정
 
-### 8.2 Python ↔ LAMP 분리 아키텍처의 장점
+### 8.2 Python ↔ Django 분리 아키텍처의 장점
 
 ```mermaid
 flowchart TB
-    subgraph INDEPENDENT["독립 개발 가능"]
-        PY["Python AI 엔진<br/>감지 + 피로관리"]
-        WEB["LAMP 웹 서버<br/>이력/통계 표시"]
+    subgraph INDEPENDENT["독립 개발 가능 (Docker Compose)"]
+        PY["Python AI 엔진 (app)<br/>감지 + 피로관리"]
+        WEB["Django 웹 서버 (web)<br/>이력/통계 표시"]
+        DB["MySQL (mysql)<br/>데이터 저장"]
+        LLM["Ollama (ollama)<br/>로컬 LLM"]
     end
 
-    PY -- "MySQL을 매개로 연결" --- WEB
+    PY -- "INSERT" --> DB
+    DB -- "SELECT (ORM)" --> WEB
 
     subgraph BENEFIT["장점"]
         B1["각각 독립적으로 디버깅 가능"]
         B2["Python 수정 시 웹 영향 없음"]
-        B3["PHP 수정 시 AI 영향 없음"]
-        B4["RPi에서 LAMP는 익숙한 웹 환경"]
+        B3["Django 수정 시 AI 영향 없음"]
+        B4["Python 언어 통일 (AI + 웹)"]
+        B5["venv 불필요 — Docker로 전체 실행"]
     end
 
     INDEPENDENT --> BENEFIT
@@ -1082,22 +1086,22 @@ capstone_project/
 ├── models/
 │   └── face_landmarker.task   # MediaPipe FaceLandmarker 모델 파일
 │
-├── web/                       # Apache DocumentRoot (/var/www/html)
-│   ├── index.php              # 메인 페이지 (실시간 대시보드)
-│   ├── api/
-│   │   ├── logs.php           # 감지 이력 API
-│   │   ├── fatigue.php        # 피로도 이력 API
-│   │   ├── recovery.php       # 해소 기록 API
-│   │   ├── environment.php    # 환경 센서 이력 API
-│   │   ├── settings.php       # 설정 조회/변경 API
-│   │   └── daily_report.php   # 일간 리포트 API
-│   ├── includes/
-│   │   └── db.php             # MySQL 접속 공통 모듈
-│   ├── css/
-│   │   └── style.css          # 대시보드 스타일
-│   └── js/
-│       ├── main.js            # 대시보드 로직
-│       └── chart_config.js    # Chart.js 설정
+├── web/                       # Django 웹 서버 (Docker · :8000)
+│   ├── Dockerfile             # Django 컨테이너 이미지
+│   ├── requirements.txt       # django, pymysql
+│   ├── manage.py
+│   ├── capstone_web/          # Django 프로젝트 설정
+│   │   ├── settings.py        # DB·정적파일 설정 (환경변수 기반)
+│   │   └── urls.py
+│   └── dashboard/             # Django 앱
+│       ├── models.py          # DB 모델 (managed=False, 기존 스키마 재사용)
+│       ├── views.py           # REST API + 대시보드 뷰
+│       ├── urls.py            # /api/logs/, /api/fatigue/ 등
+│       ├── templates/dashboard/index.html  # 실시간 대시보드
+│       └── static/
+│           ├── js/main.js     # 대시보드 로직 (API 경로 Django 형식)
+│           ├── js/chart_config.js  # Chart.js 설정
+│           └── css/style.css  # 대시보드 스타일
 │
 ├── sql/
 │   └── schema.sql             # MySQL 테이블 생성 스크립트
@@ -1132,14 +1136,14 @@ capstone_project/
 | Ollama | 0.3+ | 로컬 LLM 런타임 (데스크탑 전용, 개인화 코칭) |
 | Gemma / Qwen | 3B~9B | 한국어 대응 경량 LLM (Ollama 모델) |
 
-### 10.2 웹 서버 (LAMP 스택)
+### 10.2 웹 서버 (Django + Docker)
 
 | 기술 | 버전 | 용도 |
 |------|------|------|
-| Raspberry Pi OS | Debian 12 기반 | Linux 운영체제 |
-| Apache | 2.4+ | 웹 서버 |
-| MariaDB | 10.x | 관계형 데이터베이스 |
-| PHP | 8.x | 백엔드 API |
+| Django | 4.2+ | 웹 프레임워크 (API + 대시보드) |
+| MySQL | 8.0 (Docker) | 관계형 데이터베이스 |
+| Docker Compose | 2.x | 전체 서비스 컨테이너 관리 |
+| uv | 최신 | Python 패키지 설치 (pip 대비 고속) |
 | Chart.js | 4.x | 통계/추이 그래프 시각화 |
 | chartjs-plugin-annotation | 3.x | 차트 기준선 표시 |
 

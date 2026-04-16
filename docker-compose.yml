@@ -31,14 +31,52 @@ services:
       - "11434:11434"
     volumes:
       - ollama_data:/root/.ollama
-    # GPU 사용 시 아래 주석 해제 (Docker Desktop + NVIDIA Container Toolkit 필요)
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: all
-    #           capabilities: [gpu]
+     #  GPU 사용 시 아래 주석 해제 (Docker Desktop + NVIDIA Container Toolkit 필요)
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  app:
+    build: .
+    container_name: capstone-app
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+    env_file:
+      - .env
+    environment:
+      # Docker 내부 네트워크 호스트명으로 덮어쓰기
+      DB_HOST: mysql
+      LLM_HOST: http://ollama:11434
+    volumes:
+      # MediaPipe 모델 (빌드 캐시 방지용 마운트)
+      - ./models:/app/models
+    # 웹캠 연결 시 아래 주석 해제 (usbipd-win으로 패스스루 후 /dev/video0 확인 필요)
+    devices:
+     - /dev/video0:/dev/video0
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    container_name: capstone-web
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      DB_HOST: mysql
+    ports:
+      - "8000:8000"
 
 volumes:
   mysql_data:

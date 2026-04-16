@@ -1,0 +1,127 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AIoT 졸음 및 집중력 저하 방지 시스템</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{% static 'css/style.css' %}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation"></script>
+</head>
+<body>
+    <header>
+        <h1>AIoT 졸음 및 집중력 저하 방지 시스템</h1>
+        <p>실시간 모니터링 대시보드</p>
+    </header>
+
+    <main>
+        <section class="dashboard-cards">
+            <div class="card card-fatigue">
+                <div class="card-icon">😴</div>
+                <div class="card-content">
+                    <h3>현재 피로도</h3>
+                    <div class="card-value" id="fatigue-score">--</div>
+                    <div class="card-label" id="fatigue-level">대기중</div>
+                </div>
+            </div>
+            <div class="card card-detection">
+                <div class="card-icon">📊</div>
+                <div class="card-content">
+                    <h3>오늘 감지 횟수</h3>
+                    <div class="card-value" id="detection-count">--</div>
+                    <div class="card-label">총 감지</div>
+                </div>
+            </div>
+            <div class="card card-alert">
+                <div class="card-icon">⚠️</div>
+                <div class="card-content">
+                    <h3>오늘 경고 횟수</h3>
+                    <div class="card-value" id="alert-count">--</div>
+                    <div class="card-label">주의 이상</div>
+                </div>
+            </div>
+            <div class="card card-env">
+                <div class="card-icon">🌡️</div>
+                <div class="card-content">
+                    <h3>실내 환경</h3>
+                    <div class="card-value" id="env-co2">-- ppm</div>
+                    <div class="card-label" id="env-temp-humid">--°C / --%</div>
+                </div>
+            </div>
+        </section>
+
+        <section class="chart-section">
+            <div class="chart-container">
+                <h3>졸음 점수 추이 (최근 24시간)</h3>
+                <canvas id="drowsinessChart"></canvas>
+            </div>
+            <div class="chart-container">
+                <h3>피로도 추이</h3>
+                <canvas id="fatigueChart"></canvas>
+            </div>
+        </section>
+
+        <section class="chart-section">
+            <div class="chart-container full-width">
+                <h3>환경 센서 추이</h3>
+                <canvas id="environmentChart"></canvas>
+            </div>
+        </section>
+
+        <section class="table-section">
+            <h3>최근 감지 이력</h3>
+            <div class="table-wrapper">
+                <table id="logs-table">
+                    <thead>
+                        <tr>
+                            <th>시간</th>
+                            <th>EAR</th>
+                            <th>MAR</th>
+                            <th>졸음점수</th>
+                            <th>경고단계</th>
+                            <th>CO₂</th>
+                            <th>온도</th>
+                            <th>습도</th>
+                            <th>환경점수</th>
+                        </tr>
+                    </thead>
+                    <tbody id="logs-body">
+                        <tr><td colspan="9">데이터를 불러오는 중...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="table-section">
+            <h3>피로 해소 기록</h3>
+            <div class="table-wrapper">
+                <table id="recovery-table">
+                    <thead>
+                        <tr>
+                            <th>시간</th>
+                            <th>가이드 유형</th>
+                            <th>해소 전 피로도</th>
+                            <th>해소 후 피로도</th>
+                            <th>소요시간</th>
+                            <th>효과</th>
+                        </tr>
+                    </thead>
+                    <tbody id="recovery-body">
+                        <tr><td colspan="6">데이터를 불러오는 중...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <p>AIoT 기반 졸음 및 집중력 저하 방지 시스템 &copy; 2025</p>
+    </footer>
+
+    <script src="{% static 'js/chart_config.js' %}"></script>
+    <script src="{% static 'js/main.js' %}"></script>
+</body>
+</html>
