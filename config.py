@@ -147,8 +147,8 @@ DUMMY_HUMIDITY = 50.0
 # 로컬 LLM (Ollama) 설정 - 데스크탑 전용
 # ──────────────────────────────────────────────
 LLM_ENABLED = True                        # False로 끄면 정적 가이드만 사용
-LLM_HOST = "http://127.0.0.1:11434"       # Ollama 기본 포트
-LLM_MODEL = "qwen2.5:14b"                 # RTX 5070 Ti + 48GB RAM 기준 최적. 경량: gemma3:4b
+LLM_HOST = "http://127.0.0.1:11435"       # Ollama 호스트 (tq-ollama 인스턴스에 한국어 모델 보유)
+LLM_MODEL = "exaone3.5:7.8b"              # LG AI연구원, 한국어 특화. 대안: gemma4:e4b
 LLM_TIMEOUT = 30                          # 초
 LLM_COOLDOWN = 300                        # 같은 코칭 반복 방지 (초)
 LLM_MAX_TOKENS = 400                      # 응답 최대 토큰

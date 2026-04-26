@@ -9,7 +9,7 @@
 | 개발 인원 | 1인 |
 | 핵심 기술 | Raspberry Pi, MediaPipe, OpenCV, Django, Docker, GPIO, 로컬 LLM (Ollama) |
 
-본 프로젝트는 Raspberry Pi에 카메라와 환경 센서를 연결하여 사용자의 얼굴을 실시간으로 분석하고, AI 기반 졸음 및 집중력 저하를 감지하여 단계적 경고를 출력하는 임베디드 AIoT 시스템이다. 다중 센서 융합(EAR, MAR, Head Pose, CO₂, 온도, 습도)을 통해 종합적으로 졸음 상태를 판단하고, 누적 피로도를 추적하여 단계별 피로 해소 가이드를 제공한다. 또한 데스크탑 환경에서는 **로컬 LLM(Ollama)**을 연동하여 개인 상태·원인·회복 이력을 반영한 **맞춤형 대화체 코칭**을 제공한다. **Django** 기반 웹 서버를 통해 감지 이력, 피로도 리포트 및 환경 데이터를 대시보드 형태로 제공하며, 전체 서비스는 **Docker Compose**로 컨테이너화하여 운영한다.
+본 프로젝트는 Raspberry Pi에 카메라와 환경 센서를 연결하여 사용자의 얼굴을 실시간으로 분석하고, AI 기반 졸음 및 집중력 저하를 감지하여 단계적 경고를 출력하는 임베디드 AIoT 시스템이다. 다중 센서 융합(EAR, MAR, Head Pose, CO₂, 온도, 습도)을 통해 종합적으로 졸음 상태를 판단하고, 누적 피로도를 추적하여 단계별 피로 해소 가이드를 제공한다. 또한 데스크탑 환경에서는 **로컬 LLM(Ollama)**을 연동하여 개인 상태·원인·회복 이력을 반영한 **맞춤형 대화체 코칭**을 제공한다. **Django** 기반 웹 서버를 통해 감지 이력, 피로도 리포트 및 환경 데이터를 대시보드 형태로 제공한다. 데스크탑 개발 환경에서는 AI 엔진(`main.py`)을 호스트에서 직접 실행하여 웹캠/USB에 직접 접근하고, MySQL·Django·Ollama는 **Docker Compose**로 컨테이너화하여 운영한다(RPi 이식 단계에서는 모든 구성요소가 단일 보드에서 실행된다).
 
 ### 1.1 목적
 
@@ -43,13 +43,13 @@ graph TB
         FATIGUE["피로도 관리 모듈<br/>누적 피로 추적 + 해소 가이드"]
         LLM["🤖 로컬 LLM 코치<br/>Ollama 개인화 조언<br/>(데스크탑 전용)"]
         GPIO["GPIO 제어 모듈<br/>경고 출력 관리"]
-        PYTHON["Python 데이터 수집기<br/>분석 결과 → DB 저장"]
+        PYTHON["Python 데이터 수집기<br/>(호스트 직접 실행 · main.py)<br/>분석 결과 → DB 저장"]
     end
 
-    subgraph WEB["🌐 Django 웹 서버 (Docker)"]
-        DJANGO["Django 4.x<br/>백엔드 API + 대시보드"]
-        MYSQL["MySQL 8.0<br/>이력 저장 (Docker)"]
-        OLLAMA_SVC["Ollama (Docker)<br/>로컬 LLM 서버"]
+    subgraph WEB["🌐 백엔드 서비스 (Docker Compose)"]
+        DJANGO["Django 4.x (web)<br/>백엔드 API + 대시보드"]
+        MYSQL["MySQL 8.0 (mysql)<br/>이력 저장"]
+        OLLAMA_SVC["Ollama (별도 인스턴스)<br/>로컬 LLM 서버 (:11435)"]
     end
 
     subgraph OUTPUT["⚠️ 경고 및 가이드 출력"]
@@ -81,7 +81,7 @@ graph TB
 
 ```mermaid
 flowchart LR
-    subgraph PYTHON["Python (AI 엔진 · Docker)"]
+    subgraph PYTHON["Python (AI 엔진 · 호스트 직접 실행)"]
         P1["졸음 감지 결과"]
         P2["EAR / MAR / Head Pose"]
         P3["CO₂ / 온습도"]
@@ -713,7 +713,7 @@ flowchart LR
 
     subgraph LLM["로컬 LLM (Ollama)"]
         P["프롬프트 구성<br/>(SYSTEM + 사용자 상태)"]
-        M["Gemma / Qwen 모델<br/>(127.0.0.1:11434)"]
+        M["EXAONE 3.5 7.8B 등<br/>(127.0.0.1:11435)"]
         R["응답 생성<br/>(4~6문장 한국어 조언)"]
         P --> M --> R
     end
@@ -738,7 +738,7 @@ flowchart LR
 LLM 코칭 시스템 특징:
 
 1. 로컬 실행 (프라이버시 + 오프라인 동작)
-   - Ollama HTTP API (127.0.0.1:11434) 사용
+   - Ollama HTTP API (기본 127.0.0.1:11434, 본 프로젝트는 별도 인스턴스 :11435 사용) 사용
    - 외부 전송 없음 → 생체 데이터 보안 확보
    - 네트워크 없이도 동작
 
@@ -762,9 +762,10 @@ LLM 코칭 시스템 특징:
    - 마지막 요청으로부터 300초(5분) 경과 전 요청 무시
    - 기본 가이드 출력 쿨다운과 동일한 주기
 
-사용 모델 권장사항 (config.LLM_MODEL):
-  - 경량: gemma3:4b / qwen2.5:3b (RAM 4GB+)
-  - 균형: gemma2:9b / qwen2.5:7b (RAM 8GB+)
+사용 모델 (config.LLM_MODEL):
+  - 기본 채택: exaone3.5:7.8b (LG AI연구원, 한국어 특화)
+  - 대안 경량: gemma3:4b / qwen2.5:3b (RAM 4GB+)
+  - 대안 균형: gemma2:9b / qwen2.5:7b (RAM 8GB+)
   - 데스크탑 전용이므로 RPi에서는 비활성화 (LLM_ENABLED = False)
 ```
 
@@ -795,11 +796,11 @@ CO2: 1150ppm, 온도: 27°C, 습도: 55%
 
 | 컴포넌트 | 기술 | 역할 |
 |----------|------|------|
-| 웹 프레임워크 | Django 4.x | 백엔드 API + HTML 대시보드 |
-| 데이터베이스 | MySQL 8.0 (Docker) | 이력, 설정값 저장 |
-| LLM 서버 | Ollama (Docker) | 로컬 LLM 개인화 코칭 |
-| AI 엔진 | Python app (Docker) | 졸음 감지 + 피로 관리 |
-| 컨테이너 관리 | Docker Compose | 전체 서비스 통합 실행 |
+| 웹 프레임워크 | Django 4.x (Docker, web) | 백엔드 API + HTML 대시보드 |
+| 데이터베이스 | MySQL 8.0 (Docker, mysql) | 이력, 설정값 저장 |
+| LLM 서버 | Ollama (별도 인스턴스, :11435) | 로컬 LLM 개인화 코칭 |
+| AI 엔진 | Python `main.py` (호스트 직접 실행) | 졸음 감지 + 피로 관리 (웹캠 직접 접근) |
+| 컨테이너 관리 | Docker Compose | 백엔드 서비스 통합 실행 |
 
 ### 6.2 데이터베이스 스키마
 
@@ -894,10 +895,15 @@ erDiagram
 ### 6.5 Python ↔ MySQL 연동 방식
 
 ```
-[Python AI 엔진 (Docker)] --INSERT--> [MySQL (Docker)] --SELECT--> [Django API (Docker)] --JSON--> [웹 브라우저]
+[Python AI 엔진 (호스트)] --INSERT--> [MySQL (Docker)] --SELECT--> [Django API (Docker)] --JSON--> [웹 브라우저]
 ```
 
-Python AI 엔진과 Django가 DB를 매개로 완전히 분리되어, 각각 독립적으로 개발·디버깅이 가능하다. Docker Compose 네트워크로 서비스 간 통신하며, `DB_HOST=mysql`, `LLM_HOST=http://ollama:11434`로 설정한다.
+Python AI 엔진과 Django가 DB를 매개로 완전히 분리되어, 각각 독립적으로 개발·디버깅이 가능하다. 데스크탑 개발 환경에서 AI 엔진은 호스트에서 실행되어 웹캠/USB에 직접 접근하며, MySQL과 Django는 Docker Compose 네트워크 안에서 통신한다.
+
+| 실행 위치 | DB 접속 | LLM 접속 |
+|-----------|---------|----------|
+| 호스트 (`main.py`) | `localhost:3307` | `http://127.0.0.1:11435` (별도 Ollama 인스턴스) |
+| Docker 내부 (Django `web`) | `mysql:3306` | — |
 
 ---
 
@@ -1014,7 +1020,7 @@ flowchart TB
 
 ```mermaid
 flowchart LR
-    DEV["🖥️ 데스크탑 개발<br/>웹캠으로 AI 알고리즘<br/>Docker Compose로 전체 실행"] --> TEST["🧪 알고리즘 검증<br/>단위 테스트<br/>통합 동작 확인"]
+    DEV["🖥️ 데스크탑 개발<br/>웹캠으로 AI 알고리즘 (호스트 직접 실행)<br/>MySQL/Django/Ollama는 Docker Compose"] --> TEST["🧪 알고리즘 검증<br/>단위 테스트<br/>통합 동작 확인"]
     TEST --> PORT["📦 RPi 이식<br/>카메라 + 센서 연결<br/>GPIO + LAMP 이전"]
     PORT --> DEMO["🎯 최종 시연<br/>임베디드 AIoT"]
 
@@ -1024,20 +1030,20 @@ flowchart LR
     style DEMO fill:#EAF3DE,stroke:#3B6D11,color:#173404
 ```
 
-- 코어 AI 로직은 데스크탑에서 웹캠으로 먼저 개발
+- 코어 AI 로직은 데스크탑(Windows 호스트)에서 웹캠으로 먼저 개발 — `python main.py`
 - 환경 센서는 데스크탑에서 더미 데이터로 테스트 후 RPi에서 실제 연결
-- Django 웹 파트는 Docker Compose로 병행 개발 (`docker compose up -d`)
+- Django 웹·MySQL·Ollama는 Docker Compose로 병행 실행 (`docker compose up -d`)
 - 카메라 입력부, GPIO, 센서 통신부만 RPi에서 조정
 
 ### 8.2 Python ↔ Django 분리 아키텍처의 장점
 
 ```mermaid
 flowchart TB
-    subgraph INDEPENDENT["독립 개발 가능 (Docker Compose)"]
-        PY["Python AI 엔진 (app)<br/>감지 + 피로관리"]
-        WEB["Django 웹 서버 (web)<br/>이력/통계 표시"]
-        DB["MySQL (mysql)<br/>데이터 저장"]
-        LLM["Ollama (ollama)<br/>로컬 LLM"]
+    subgraph INDEPENDENT["독립 개발 가능"]
+        PY["Python AI 엔진 (호스트, main.py)<br/>감지 + 피로관리"]
+        WEB["Django 웹 서버 (Docker, web)<br/>이력/통계 표시"]
+        DB["MySQL (Docker, mysql)<br/>데이터 저장"]
+        LLM["Ollama (별도 인스턴스, :11435)<br/>로컬 LLM"]
     end
 
     PY -- "INSERT" --> DB
@@ -1048,7 +1054,7 @@ flowchart TB
         B2["Python 수정 시 웹 영향 없음"]
         B3["Django 수정 시 AI 영향 없음"]
         B4["Python 언어 통일 (AI + 웹)"]
-        B5["venv 불필요 — Docker로 전체 실행"]
+        B5["AI 엔진은 호스트 venv, 그 외는 Docker 격리"]
     end
 
     INDEPENDENT --> BENEFIT
@@ -1134,7 +1140,7 @@ capstone_project/
 | Adafruit_DHT | 1.4+ | DHT22 센서 읽기 |
 | NumPy | 1.24+ | 수치 계산 |
 | Ollama | 0.3+ | 로컬 LLM 런타임 (데스크탑 전용, 개인화 코칭) |
-| Gemma / Qwen | 3B~9B | 한국어 대응 경량 LLM (Ollama 모델) |
+| EXAONE 3.5 / Gemma / Qwen | 4B~9B | 한국어 대응 LLM (기본: exaone3.5:7.8b) |
 
 ### 10.2 웹 서버 (Django + Docker)
 
