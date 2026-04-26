@@ -15,13 +15,18 @@ import config
 class Camera:
     def __init__(self, source=None):
         if source is None:
-            source = config.CAMERA_INDEX
+            url = getattr(config, "CAMERA_URL", "") or ""
+            source = url.strip() if url.strip() else config.CAMERA_INDEX
 
         if config.IS_DESKTOP:
             self.cap = cv2.VideoCapture(source)
-            self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, config.CAMERA_WIDTH)
-            self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, config.CAMERA_HEIGHT)
-            self.cap.set(cv2.CAP_PROP_FPS, config.CAMERA_FPS)
+            if isinstance(source, int):
+                # 로컬 웹캠일 때만 해상도/FPS 강제 (HTTP MJPEG는 송출측 설정을 따름)
+                self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, config.CAMERA_WIDTH)
+                self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, config.CAMERA_HEIGHT)
+                self.cap.set(cv2.CAP_PROP_FPS, config.CAMERA_FPS)
+            else:
+                print(f"[Camera] 원격 스트림 사용: {source}")
         else:
             try:
                 from picamera2 import Picamera2

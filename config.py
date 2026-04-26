@@ -11,6 +11,8 @@ IS_DESKTOP = True  # True: 웹캠 + 더미 센서, False: Pi Camera + 실제 센
 # 카메라 설정
 # ──────────────────────────────────────────────
 CAMERA_INDEX = 0          # 웹캠 인덱스 (데스크탑)
+CAMERA_URL = ""           # 비어있지 않으면 인덱스 대신 MJPEG/RTSP URL 사용
+                          # 예) "http://172.20.224.1:8080/video"  (Windows MJPEG 브릿지)
 CAMERA_WIDTH = 640
 CAMERA_HEIGHT = 480
 CAMERA_FPS = 30
@@ -191,3 +193,4 @@ if _env:
 # 환경변수 직접 주입 (Docker Compose environment 섹션)이 .env보다 우선
 DB_HOST = os.environ.get('DB_HOST', DB_HOST)
 LLM_HOST = os.environ.get('LLM_HOST', LLM_HOST)
+CAMERA_URL = os.environ.get('CAMERA_URL', CAMERA_URL)

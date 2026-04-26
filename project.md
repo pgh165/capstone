@@ -32,7 +32,7 @@
 ```mermaid
 graph TB
     subgraph SENSOR["📷 센서 입력"]
-        CAM["Pi Camera V2<br/>실시간 영상 촬영"]
+        CAM["Pi Camera V2 / Windows USB Webcam<br/>(데스크탑은 MJPEG 브릿지 경유)"]
         CO2["MH-Z19B<br/>CO₂ 농도 측정"]
         DHT["DHT22<br/>온습도 측정"]
     end
@@ -905,6 +905,49 @@ Python AI 엔진과 Django가 DB를 매개로 완전히 분리되어, 각각 독
 | 호스트 (`main.py`) | `localhost:3307` | `http://127.0.0.1:11435` (별도 Ollama 인스턴스) |
 | Docker 내부 (Django `web`) | `mysql:3306` | — |
 
+### 6.6 MJPEG 브릿지 (WSL 데스크탑 환경 전용)
+
+WSL2 + usbipd 조합에서 UVC 웹캠의 isochronous 스트림이 `vhci_hcd: urb->status -104`로 자주 깨지는 문제(60% 수준 프레임 드랍, JPEG corrupt)가 있어, **Windows 호스트에서 카메라를 점유한 뒤 HTTP/MJPEG으로 송출하는 브릿지**로 우회한다.
+
+```mermaid
+flowchart LR
+    CAM["💻 USB Webcam<br/>(Windows에 연결)"] --> WIN["🪟 Windows<br/>tools/mjpeg_server.py<br/>(Flask + OpenCV/CAP_DSHOW)"]
+    WIN -- "HTTP MJPEG :8080/video" --> WSL["🐧 WSL2<br/>main.py (cv2.VideoCapture(URL))"]
+    WSL --> MP["MediaPipe 분석 → DB"]
+
+    style CAM fill:#E1F5EE,stroke:#0F6E56,color:#04342C
+    style WIN fill:#E6F1FB,stroke:#185FA5,color:#042C53
+    style WSL fill:#EEEDFE,stroke:#534AB7,color:#26215C
+    style MP fill:#FAEEDA,stroke:#854F0B,color:#412402
+```
+
+```
+운영 절차 (데스크탑 개발 환경):
+
+1. Windows PowerShell에서 MJPEG 브릿지 기동
+   python \\wsl.localhost\<배포명>\home\parkjiho\capstone\tools\mjpeg_server.py
+   → http://0.0.0.0:8080/video 송출
+
+2. WSL에서 Docker 백엔드 기동
+   docker compose up -d        # mysql + web
+
+3. WSL에서 AI 엔진 기동 (CAMERA_URL 주입)
+   CAMERA_URL="http://<windows-host-ip>:8080/video" .venv/bin/python main.py
+   (windows-host-ip는 NAT 모드 기준 WSL의 default gateway)
+
+4. 브라우저로 대시보드 접속
+   http://localhost:8000
+
+장점:
+  - usbipd isoc 패킷 손실 우회 → 프레임 100% 수신
+  - RPi 이식 시에도 동일 URL 인터페이스 재사용 가능
+  - Windows Defender Firewall에 8080 인바운드 1회만 허용
+
+config 우선순위:
+  config.CAMERA_URL (또는 환경변수 CAMERA_URL)이 비어있지 않으면
+  config.CAMERA_INDEX 대신 URL 문자열을 cv2.VideoCapture에 전달
+```
+
 ---
 
 ## 7. 개발 단계
@@ -1111,6 +1154,9 @@ capstone_project/
 │
 ├── sql/
 │   └── schema.sql             # MySQL 테이블 생성 스크립트
+│
+├── tools/
+│   └── mjpeg_server.py        # Windows 호스트용 MJPEG 브릿지 (WSL 데스크탑 환경 전용)
 │
 ├── tests/
 │   ├── test_ear.py            # EAR 알고리즘 단위 테스트
