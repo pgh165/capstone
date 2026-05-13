@@ -11,8 +11,8 @@ IS_DESKTOP = True  # True: 웹캠 + 더미 센서, False: Pi Camera + 실제 센
 # 카메라 설정
 # ──────────────────────────────────────────────
 CAMERA_INDEX = 0          # 웹캠 인덱스 (데스크탑)
-CAMERA_URL = ""           # 비어있지 않으면 인덱스 대신 MJPEG/RTSP URL 사용
-                          # 예) "http://172.20.224.1:8080/video"  (Windows MJPEG 브릿지)
+CAMERA_URL = ""  # 미사용 (레거시 호환용, 로컬 웹캠은 CAMERA_INDEX 사용)
+CAMERA_FORMAT = "mjpeg"   # v4l2 캡처 포맷 (mjpeg / yuyv422)
 CAMERA_WIDTH = 640
 CAMERA_HEIGHT = 480
 CAMERA_FPS = 30
@@ -156,6 +156,28 @@ LLM_COOLDOWN = 300                        # 같은 코칭 반복 방지 (초)
 LLM_MAX_TOKENS = 400                      # 응답 최대 토큰
 
 # ──────────────────────────────────────────────
+# TTS (음성 출력) 설정
+# ──────────────────────────────────────────────
+TTS_ENABLED = True
+TTS_ENGINE = "edge-tts"        # "espeak-ng"(오프라인) | "edge-tts"(온라인, 자연스러운 음질)
+
+# espeak-ng 설정
+TTS_VOICE = "ko"                # 언어 코드 (ko, en, ...)
+TTS_RATE  = 150                 # 말하기 속도 (단어/분, 기본 175)
+TTS_PITCH = 50                  # 음높이 (0~99)
+
+# edge-tts 설정 (TTS_ENGINE = "edge-tts" 일 때)
+TTS_EDGE_VOICE = "ko-KR-SunHiNeural"   # 남성. 여성: ko-KR-SunHiNeural
+TTS_EDGE_RATE  = "+0%"                  # 속도 조절 (-50% ~ +50%)
+
+# 경보 단계별 즉각 발화 문구 (0=정상 → 발화 없음)
+ALERT_PHRASES = {
+    1: "주의하세요. 졸음이 감지되고 있습니다.",
+    2: "경고! 졸음 수준이 높습니다. 잠시 쉬어가세요.",
+    3: "위험! 즉시 작업을 멈추고 눈을 감아 쉬세요.",
+}
+
+# ──────────────────────────────────────────────
 # 파일 경로
 # ──────────────────────────────────────────────
 import os
@@ -193,4 +215,5 @@ if _env:
 # 환경변수 직접 주입 (Docker Compose environment 섹션)이 .env보다 우선
 DB_HOST = os.environ.get('DB_HOST', DB_HOST)
 LLM_HOST = os.environ.get('LLM_HOST', LLM_HOST)
+CAMERA_INDEX = int(os.environ.get('CAMERA_INDEX', CAMERA_INDEX))
 CAMERA_URL = os.environ.get('CAMERA_URL', CAMERA_URL)

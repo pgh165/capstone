@@ -52,6 +52,7 @@ from modules.recovery_guide import RecoveryGuide
 from modules.llm_coach import LLMCoach
 from modules.alert import AlertController
 from modules.db_writer import DBWriter
+from modules.voice import Voice
 
 
 def draw_info(frame, data):
@@ -113,8 +114,9 @@ def main():
     judge = DrowsinessJudge()
     fatigue_manager = FatigueManager()
     recovery_guide = RecoveryGuide()
+    voice = Voice()
     llm_coach = LLMCoach()
-    alert_controller = AlertController()
+    alert_controller = AlertController(voice=voice)
     db_writer = DBWriter()
 
     print("[main] 모든 모듈 초기화 완료")
@@ -285,6 +287,7 @@ def main():
             llm_result = llm_coach.poll_result()
             if llm_result:
                 llm_coach.display(llm_result)
+                voice.speak(llm_result.get("text", ""))
 
             # 10. DB 저장 (주기적)
             if current_time - last_db_save >= config.DB_SAVE_INTERVAL:
@@ -365,6 +368,7 @@ def main():
     finally:
         # 리소스 해제
         print("[main] 리소스 해제 중...")
+        voice.stop()
         camera.release()
         face_detector.release()
         env_sensor.cleanup()

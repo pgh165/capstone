@@ -25,7 +25,8 @@ class AlertController:
         3: "위험 (적색 LED 점멸 + 강한 연속 부저)",
     }
 
-    def __init__(self):
+    def __init__(self, voice=None):
+        self._voice = voice
         self._current_level = -1
         self._gpio_initialized = False
         self._buzzer_pwm = None
@@ -151,17 +152,14 @@ class AlertController:
             self._set_alert_gpio(level)
 
     def _set_alert_desktop(self, level):
-        """데스크탑 모드: 콘솔에 경고 상태를 출력한다."""
+        """데스크탑 모드: 콘솔에 경고 상태를 출력하고 TTS로 발화한다."""
         label = self.LEVEL_LABELS.get(level, f"알 수 없는 단계 ({level})")
+        print(f"[ALERT] Level {level}: {label}")
 
-        if level == 0:
-            print(f"[ALERT] Level 0: {label}")
-        elif level == 1:
-            print(f"[ALERT] Level 1: {label}")
-        elif level == 2:
-            print(f"[ALERT] Level 2: {label}")
-        elif level == 3:
-            print(f"[ALERT] Level 3: {label}")
+        if self._voice and level > 0:
+            phrase = config.ALERT_PHRASES.get(level, "")
+            if phrase:
+                self._voice.speak(phrase, priority=True)
 
     def _set_alert_gpio(self, level):
         """라즈베리파이 모드: GPIO로 LED/부저를 제어한다."""
