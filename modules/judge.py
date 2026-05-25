@@ -17,7 +17,7 @@ class DrowsinessJudge:
     """영상 분석 결과를 종합하여 졸음 점수를 판단하는 클래스."""
 
     # EMA 스무딩 계수 (0에 가까울수록 부드러움, 1이면 스무딩 없음)
-    _EMA_ALPHA = 0.15
+    _EMA_ALPHA = 0.25
 
     def __init__(self):
         self.w_ear = config.W1_EAR
