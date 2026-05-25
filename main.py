@@ -336,11 +336,7 @@ def main():
                     os.remove(CMD_FILE)
                     if _cmd.get("cmd") == "pomo_reset":
                         pomodoro.reset()
-                        fatigue_manager.apply_recovery(
-                            amount=fatigue_manager.fatigue_score  # 피로도 완전 초기화
-                        )
-                        judge._ema_score = None  # 졸음 EMA 초기화
-                        drowsiness_score = 0.0
+                        fatigue_manager.reset_work_timer()
                         voice.speak("포모도로 타이머를 초기화했습니다.")
             except Exception:
                 pass
