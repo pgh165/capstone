@@ -153,32 +153,57 @@
       font-family: 'JetBrains Mono', monospace;
     }
 
-    /* 포모도로 카드 */
+    /* 포모도로 카드 (메인) */
+    .pomo-main-card {
+      text-align: center;
+      padding: 28px 32px 24px;
+    }
+    .pomo-main-card h4 { margin-bottom: 16px; }
     .pomo-state {
-      font-size: 1.05rem;
+      font-size: 1rem;
       font-weight: 700;
       color: var(--accent);
-      margin-bottom: 10px;
+      letter-spacing: .08em;
+      margin-bottom: 12px;
+    }
+    #pomo-clock {
+      font-size: 4rem;
+      font-weight: 700;
+      font-family: 'JetBrains Mono', monospace;
+      color: var(--accent);
+      letter-spacing: .04em;
+      line-height: 1;
+      margin-bottom: 16px;
+      transition: color .4s;
     }
     .pomo-bar-wrap {
       background: var(--border);
       border-radius: 6px;
-      height: 8px;
+      height: 10px;
       overflow: hidden;
-      margin-bottom: 8px;
+      margin-bottom: 10px;
+      max-width: 480px;
+      margin-left: auto;
+      margin-right: auto;
     }
     #pomo-bar {
       height: 100%;
       border-radius: 6px;
       background: var(--accent);
       width: 0%;
-      transition: width .5s ease;
+      transition: width .5s ease, background .4s;
     }
-    .pomo-detail {
-      font-size: 0.78rem;
-      color: var(--muted);
+    .pomo-meta {
       display: flex;
-      justify-content: space-between;
+      justify-content: center;
+      gap: 24px;
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+    .pomo-meta span b {
+      color: var(--text);
+      font-weight: 600;
     }
 
     /* 피로도 카드 */
@@ -326,27 +351,25 @@
       </div>
     </div>
 
-    <!-- 포모도로 -->
-    <div class="card">
-      <h4>🍅 포모도로 타이머</h4>
-      <div class="pomo-state" id="pomo-state">대기 중</div>
-      <div class="pomo-bar-wrap">
-        <div id="pomo-bar"></div>
-      </div>
-      <div class="pomo-detail">
-        <span id="pomo-elapsed">--</span>
-        <span id="pomo-remaining">남은 시간: --</span>
-      </div>
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px">
-        <div style="font-size:.78rem;color:var(--muted)" id="pomo-cycle"></div>
-        <div style="font-size:.78rem;color:var(--muted)">완료 <span id="pomo-done" style="font-weight:600;color:var(--accent)">0</span>회</div>
-      </div>
-    </div>
-
   </div>
 
   <!-- ── 오른쪽 패널 ── -->
   <div class="right-panel">
+
+    <!-- 포모도로 타이머 (메인) -->
+    <div class="card pomo-main-card">
+      <h4>🍅 포모도로 타이머</h4>
+      <div class="pomo-state" id="pomo-state">대기 중</div>
+      <div id="pomo-clock">--:--</div>
+      <div class="pomo-bar-wrap">
+        <div id="pomo-bar"></div>
+      </div>
+      <div class="pomo-meta">
+        <span>경과 <b id="pomo-elapsed">--</b></span>
+        <span>사이클 <b id="pomo-cycle">--</b></span>
+        <span>완료 <b id="pomo-done">0</b>회</span>
+      </div>
+    </div>
 
     <!-- 졸음 점수 라인 차트 (최근 60초) -->
     <div class="card chart-card">
@@ -544,6 +567,13 @@ function fmtMin(min) {
   return `${m}분 ${s < 10 ? '0'+s : s}초`;
 }
 
+function fmtClock(min) {
+  if (min == null) return '--:--';
+  const total = Math.max(0, Math.round(min * 60));
+  const m = Math.floor(total / 60), s = total % 60;
+  return `${m < 10 ? '0'+m : m}:${s < 10 ? '0'+s : s}`;
+}
+
 // ── 브라우저 알림 ─────────────────────────────────────────────
 let lastNotifiedLevel = 0;
 
@@ -634,26 +664,31 @@ async function poll() {
     // 포모도로
     const pomo = d.pomo ?? {};
     const state = pomo.state ?? 'idle';
-    let stateText = '대기 중', barPct = 0, elapsed = '--', remaining = '--';
+    let stateText = '대기 중', barPct = 0, clockMin = null, elapsedText = '--';
+    let pomoColor = 'var(--accent)';
     if (state === 'working') {
-      stateText = '🍅 작업 중';
+      stateText  = '🍅 작업 중';
+      pomoColor  = 'var(--accent)';
       const planned = pomo.planned_min || 1;
-      barPct = Math.min(100, (pomo.elapsed_min / planned) * 100);
-      elapsed   = fmtMin(pomo.elapsed_min) + ' 경과';
-      remaining = '남은 시간: ' + fmtMin(pomo.remaining_min);
+      barPct     = Math.min(100, (pomo.elapsed_min / planned) * 100);
+      clockMin   = pomo.remaining_min;
+      elapsedText = fmtMin(pomo.elapsed_min);
     } else if (state === 'break') {
-      stateText = '💤 휴식 중';
+      stateText  = '💤 휴식 중';
+      pomoColor  = 'var(--normal)';
       const planned = pomo.planned_min || 1;
-      barPct = Math.min(100, ((planned - (pomo.remaining_min||0)) / planned) * 100);
-      elapsed   = fmtMin(pomo.elapsed_min) + ' 경과';
-      remaining = '남은 시간: ' + fmtMin(pomo.remaining_min);
+      barPct     = Math.min(100, ((planned - (pomo.remaining_min||0)) / planned) * 100);
+      clockMin   = pomo.remaining_min;
+      elapsedText = fmtMin(pomo.elapsed_min);
     }
-    document.getElementById('pomo-state').textContent    = stateText;
-    document.getElementById('pomo-bar').style.width      = barPct + '%';
-    document.getElementById('pomo-elapsed').textContent  = elapsed;
-    document.getElementById('pomo-remaining').textContent = remaining;
-    document.getElementById('pomo-cycle').textContent    =
-      pomo.cycle ? `사이클 ${pomo.cycle}번째` : '';
+    const clockEl = document.getElementById('pomo-clock');
+    clockEl.textContent  = fmtClock(clockMin);
+    clockEl.style.color  = pomoColor;
+    document.getElementById('pomo-bar').style.width     = barPct + '%';
+    document.getElementById('pomo-bar').style.background = pomoColor;
+    document.getElementById('pomo-state').textContent   = stateText;
+    document.getElementById('pomo-elapsed').textContent = elapsedText;
+    document.getElementById('pomo-cycle').textContent   = pomo.cycle ?? '--';
     const doneCycles = pomo.cycle
       ? (state === 'working' ? pomo.cycle - 1 : pomo.cycle)
       : 0;
