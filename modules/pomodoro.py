@@ -9,6 +9,7 @@ AI 개인 맞춤형 포모도로 타이머
 """
 
 import time
+import datetime
 import sys
 import os
 
@@ -39,6 +40,10 @@ class PomodoroTimer:
         self._planned_break_sec = config.POMODORO_BASE_BREAK_MIN * 60
 
         self._last_emergency = 0.0
+
+        # 개인화 학습 데이터
+        self._personal_base_min = None     # Step 4: DB 학습 기반 개인 기준 인터벌
+        self._hourly_pattern = {}          # Step 3: {hour: avg_fatigue}
 
     # ──────────────────────────────────────────────────────────────
     #  공개 API
@@ -157,6 +162,25 @@ class PomodoroTimer:
             }
         return {"state": self.IDLE, "cycle": self.cycle}
 
+    def set_hourly_pattern(self, pattern: dict):
+        """시간대별 평균 피로도 패턴을 설정한다.
+
+        Args:
+            pattern: {hour(int): avg_fatigue(float), ...}
+        """
+        self._hourly_pattern = pattern
+        print(f"[pomodoro] 시간대별 피로 패턴 로드 ({len(pattern)}개 시간대)")
+
+    def set_personal_base_min(self, minutes: int):
+        """DB 학습 기반 개인 최적 작업 인터벌 기준을 설정한다."""
+        clamped = max(config.POMODORO_MIN_WORK_MIN,
+                      min(config.POMODORO_MAX_WORK_MIN, minutes))
+        self._personal_base_min = clamped
+        print(
+            f"[pomodoro] 개인 최적 작업 시간 설정: {clamped}분 "
+            f"(학습된 원본: {minutes}분)"
+        )
+
     # ──────────────────────────────────────────────────────────────
     #  동적 계산 (AI 판단 기반)
     # ──────────────────────────────────────────────────────────────
@@ -166,7 +190,9 @@ class PomodoroTimer:
 
         피로/졸음이 낮을수록 인터벌 연장, 높을수록 단축.
         """
-        base = config.POMODORO_BASE_WORK_MIN
+        # Step 4: 개인 학습 기준값 우선, 없으면 config 기본값
+        base = self._personal_base_min if self._personal_base_min is not None \
+               else config.POMODORO_BASE_WORK_MIN
 
         # 피로도 보정
         if fatigue_score <= 30:
@@ -190,7 +216,20 @@ class PomodoroTimer:
         else:
             drowsy_adj = -10
 
-        result = base + fatigue_adj + drowsy_adj
+        # Step 3: 현재 시간대의 과거 피로 패턴 보정
+        hour = datetime.datetime.now().hour
+        hour_fatigue = self._hourly_pattern.get(hour)
+        if hour_fatigue is not None:
+            if hour_fatigue >= 75:
+                time_adj = -5
+            elif hour_fatigue >= 50:
+                time_adj = -3
+            else:
+                time_adj = 0
+        else:
+            time_adj = 0
+
+        result = base + fatigue_adj + drowsy_adj + time_adj
         return max(config.POMODORO_MIN_WORK_MIN,
                    min(config.POMODORO_MAX_WORK_MIN, result))
 

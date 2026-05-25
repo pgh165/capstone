@@ -21,7 +21,7 @@ EAR_CONSEC_SECONDS = 2.0  # 연속 눈 감김 지속시간 임계값 (초)
 # ──────────────────────────────────────────────
 # MAR (Mouth Aspect Ratio) 설정
 # ──────────────────────────────────────────────
-MAR_THRESHOLD = 0.6       # 이 값 이상이면 하품 판정
+MAR_THRESHOLD = 0.75      # 이 값 이상이면 하품 판정
 YAWN_COUNT_THRESHOLD = 3  # 3분 내 이 횟수 이상이면 졸음 전조
 YAWN_WINDOW_SECONDS = 180 # 하품 카운트 윈도우 (초)
 

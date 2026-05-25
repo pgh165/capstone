@@ -43,8 +43,8 @@ class DrowsinessJudge:
         )
         raw_score = min(max(raw_score, 0), 100)
 
-        # 1.5승 변환: 제곱보다 이른 주의 감지, 선형보다 오경보 억제 (x^1.5 / 10)
-        raw_score = (raw_score ** 1.5) / 10
+        # 제곱 변환: 낮은 점수 억제, 높은 점수 강조 (x² / 100)
+        raw_score = (raw_score ** 2) / 100
 
         if self._ema_score is None:
             self._ema_score = raw_score

@@ -229,6 +229,64 @@ class DBWriter:
             print(f"[db_writer] recovery_history 조회 실패: {e}")
             return []
 
+    def get_hourly_fatigue_pattern(self):
+        """시간대별 평균 피로도를 반환한다.
+
+        Returns:
+            list[dict]: [{"hour": int, "avg_fatigue": float}, ...]
+                샘플이 3개 미만인 시간대는 제외. DB 실패 시 빈 리스트.
+        """
+        self._ensure_connection()
+        if self._conn is None:
+            return []
+
+        sql = """
+            SELECT HOUR(logged_at) AS hour,
+                   AVG(fatigue_score) AS avg_fatigue,
+                   COUNT(*) AS cnt
+            FROM fatigue_logs
+            GROUP BY HOUR(logged_at)
+            HAVING cnt >= 3
+            ORDER BY hour
+        """
+        try:
+            with self._conn.cursor() as cursor:
+                cursor.execute(sql)
+                return cursor.fetchall()
+        except Exception as e:
+            print(f"[db_writer] hourly_fatigue_pattern 조회 실패: {e}")
+            return []
+
+    def get_optimal_work_interval(self):
+        """피로가 높아질 때의 평균 연속 작업 시간을 반환한다.
+
+        fatigue_logs에서 warning/danger 단계 진입 시 continuous_work_min의
+        평균을 계산하여 개인 최적 인터벌 도출에 사용한다.
+
+        Returns:
+            dict | None: {"avg_min": float, "cnt": int} 또는 None.
+        """
+        self._ensure_connection()
+        if self._conn is None:
+            return None
+
+        sql = """
+            SELECT AVG(continuous_work_min) AS avg_min, COUNT(*) AS cnt
+            FROM fatigue_logs
+            WHERE fatigue_level IN ('warning', 'danger')
+              AND continuous_work_min > 0
+        """
+        try:
+            with self._conn.cursor() as cursor:
+                cursor.execute(sql)
+                row = cursor.fetchone()
+                if row and row.get("cnt", 0):
+                    return {"avg_min": float(row["avg_min"]), "cnt": int(row["cnt"])}
+                return None
+        except Exception as e:
+            print(f"[db_writer] optimal_work_interval 조회 실패: {e}")
+            return None
+
     # ──────────────────────────────────────────────────────────────
     #  연결 종료
     # ──────────────────────────────────────────────────────────────

@@ -115,6 +115,10 @@ class DrowsinessTracker:
     _PERCLOS_MIN_WINDOW = 20.0
 
     def __init__(self):
+        # 개인 임계값 (캘리브레이션 후 set_thresholds()로 갱신)
+        self._ear_threshold = config.EAR_THRESHOLD
+        self._mar_threshold = config.MAR_THRESHOLD
+
         # 눈 감김 추적
         self.eye_closed = False
         self.eye_close_start = None
@@ -125,6 +129,8 @@ class DrowsinessTracker:
         self.yawn_timestamps = deque()
         self.is_yawning = False
         self.current_mar = 0.0
+        self._mar_above_start = None   # MAR 임계값 초과 시작 시각
+        self._YAWN_MIN_SEC = 0.8       # 하품으로 인정되는 최소 지속시간 (초)
 
         # PERCLOS 추적 (60초 윈도우 내 눈 감김 비율)
         self._eye_states = deque()  # (timestamp, is_closed)
@@ -134,11 +140,20 @@ class DrowsinessTracker:
         self.mar_score = 0
         self.perclos = 0.0
 
+    def set_thresholds(self, ear_threshold: float, mar_threshold: float):
+        """캘리브레이션 결과로 개인 임계값을 갱신한다."""
+        self._ear_threshold = ear_threshold
+        self._mar_threshold = mar_threshold
+        print(
+            f"[drowsiness] 개인 임계값 적용 — "
+            f"EAR: {ear_threshold:.3f}, MAR: {mar_threshold:.3f}"
+        )
+
     def update_ear(self, ear_value):
         """EAR 값 업데이트 및 눈 감김 추적"""
         self.current_ear = ear_value
         now = time.time()
-        is_closed = ear_value < config.EAR_THRESHOLD
+        is_closed = ear_value < self._ear_threshold
 
         # PERCLOS 기록 및 윈도우 관리
         self._eye_states.append((now, is_closed))
@@ -178,11 +193,16 @@ class DrowsinessTracker:
         self.current_mar = mar_value
         current_time = time.time()
 
-        if mar_value > config.MAR_THRESHOLD:
-            if not self.is_yawning:
+        if mar_value > self._mar_threshold:
+            if self._mar_above_start is None:
+                self._mar_above_start = current_time
+            duration = current_time - self._mar_above_start
+            if duration >= self._YAWN_MIN_SEC and not self.is_yawning:
+                # 0.8초 이상 지속된 경우에만 하품으로 카운트
                 self.is_yawning = True
                 self.yawn_timestamps.append(current_time)
         else:
+            self._mar_above_start = None
             self.is_yawning = False
 
         # 슬라이딩 윈도우: 3분 이전 하품 제거
@@ -228,6 +248,10 @@ class DrowsinessTracker:
     def is_drowsy_by_ear(self):
         """EAR 기준 졸음 판정 (2초 이상 연속 눈 감김)"""
         return self.eye_closed and self.eye_close_duration >= config.EAR_CONSEC_SECONDS
+
+    def get_thresholds(self) -> dict:
+        """현재 적용 중인 임계값을 반환한다."""
+        return {"ear": self._ear_threshold, "mar": self._mar_threshold}
 
     def is_drowsy_by_mar(self):
         """MAR 기준 졸음 전조 (3분 내 3회 이상 하품)"""

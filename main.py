@@ -44,6 +44,7 @@ import config
 from modules.camera import Camera
 from modules.face_detector import FaceDetector
 from modules.drowsiness import calculate_ear, calculate_mar, DrowsinessTracker
+from modules.calibration import EARCalibrator
 from modules.head_pose import HeadPoseEstimator
 from modules.judge import DrowsinessJudge
 from modules.fatigue_manager import FatigueManager
@@ -121,6 +122,7 @@ def main():
     head_pose_estimator = HeadPoseEstimator()
     judge = DrowsinessJudge()
     fatigue_manager = FatigueManager()
+    calibrator = EARCalibrator()
     recovery_guide = RecoveryGuide()
     voice = Voice()
     llm_coach = LLMCoach()
@@ -135,6 +137,18 @@ def main():
     history = db_writer.get_recovery_history()
     if history:
         fatigue_manager.load_recovery_profile(history)
+
+    # Step 3: 시간대별 피로 패턴 로드
+    hourly_pattern = db_writer.get_hourly_fatigue_pattern()
+    if hourly_pattern:
+        pomodoro.set_hourly_pattern({int(r["hour"]): float(r["avg_fatigue"]) for r in hourly_pattern})
+
+    # Step 4: DB 기반 개인 최적 작업 인터벌 로드
+    optimal = db_writer.get_optimal_work_interval()
+    if optimal and optimal.get("cnt", 0) >= 5:
+        # 피로 진입 전 평균 시간의 85%를 목표 인터벌로 설정
+        target_min = max(10, int(optimal["avg_min"] * 0.85))
+        pomodoro.set_personal_base_min(target_min)
 
     print("[main] 'q' 키를 눌러 종료")
     print()
@@ -201,6 +215,15 @@ def main():
 
                 # 랜드마크 그리기 (디버깅용)
                 frame = face_detector.draw_landmarks(frame, landmarks)
+
+                # 캘리브레이션 (세션 초반 30초)
+                if not calibrator.done:
+                    calibrator.update(ear_value, mar_value)
+                    if calibrator.done:
+                        drowsiness_tracker.set_thresholds(
+                            calibrator.ear_threshold,
+                            calibrator.mar_threshold,
+                        )
 
                 # AI 판정 요청 (비동기, 5초 주기) — 규칙 기반 점수를 앵커로 전달
                 ai_judge.request({
@@ -285,10 +308,22 @@ def main():
                         profile_stats = (
                             fatigue_manager.recovery_profile.get_stats_summary()
                         )
-                        history_summary = ", ".join(
-                            f"{gt}={s['success']}/{s['total']}"
-                            for gt, s in profile_stats.items()
-                        ) if profile_stats else ""
+                        if profile_stats:
+                            qualified = [
+                                (gt, s) for gt, s in profile_stats.items()
+                                if s["total"] >= 3
+                            ]
+                            qualified.sort(key=lambda x: -x[1]["rate"])
+                            detail = ", ".join(
+                                f"{gt}(성공률{s['rate']*100:.0f}%)"
+                                for gt, s in qualified
+                            ) if qualified else ", ".join(
+                                f"{gt}={s['success']}/{s['total']}"
+                                for gt, s in profile_stats.items()
+                            )
+                            history_summary = detail
+                        else:
+                            history_summary = ""
                         llm_coach.request_coaching({
                             "fatigue_level": fatigue_level,
                             "fatigue_score": fatigue_status['fatigue_score'],

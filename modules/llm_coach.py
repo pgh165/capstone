@@ -114,7 +114,8 @@ class LLMCoach:
             f"현재 권장 가이드: {guide_str}",
         ]
         if history:
-            lines.append(f"과거 회복 효과 이력 요약: {history}")
+            lines.append(f"개인 회복 효과 이력: {history}")
+            lines.append("(이력을 참고하여 이 사람에게 효과적인 방법을 우선 추천해 주세요)")
 
         context_block = "\n".join(lines)
         return (
