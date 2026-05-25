@@ -230,10 +230,11 @@ def main():
                     "yawn_count": drowsiness_tracker.get_yawn_count(),
                 }, rule_score=drowsiness_score)
 
-            # 6. 종합 졸음 점수 산출
-            drowsiness_score = judge.calculate_drowsiness_score(
-                ear_score, mar_score, head_score
-            )
+            # 6. 종합 졸음 점수 산출 (얼굴 미검출 시 이전 점수 유지)
+            if landmarks is not None:
+                drowsiness_score = judge.calculate_drowsiness_score(
+                    ear_score, mar_score, head_score
+                )
             alert_level = judge.get_alert_level(drowsiness_score)
 
             # 7-1. AI 판정 결과 반영 (편차 30점 초과 시 절반만 반영)
