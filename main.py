@@ -459,6 +459,11 @@ def main():
         except Exception:
             pass
 
+        # 포모도로 타이머 종료 안내
+        if pomodoro.state != pomodoro.IDLE:
+            pomodoro.reset()
+            voice.speak_and_wait("프로그램을 종료합니다.")
+
         # 리소스 해제
         print("[main] 리소스 해제 중...")
         voice.stop()
