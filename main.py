@@ -153,6 +153,7 @@ def main():
     last_status_write = time.time()
     frame_count = 0
     drowsiness_score = 0.0   # 첫 프레임 rule_score 참조 전 초기화
+    _last_head_score = 0     # 얼굴 미검출 시 직전 head_score 유지용
 
     # 실시간 상태 공유 파일 경로 (Docker 볼륨 마운트 경로와 일치)
     STATUS_FILE = os.path.join(config.BASE_DIR, "data", "realtime_status.json")
@@ -176,7 +177,7 @@ def main():
             pitch, yaw, roll = 0.0, 0.0, 0.0
             ear_score = 0
             mar_score = 0
-            head_score = 0
+            head_score = _last_head_score  # 얼굴 미검출 시 직전 값 유지
 
             # 2. 얼굴 검출
             landmarks = face_detector.detect(frame)
@@ -207,6 +208,7 @@ def main():
                 face_points = face_detector.get_head_pose_points(landmarks, frame.shape)
                 pitch, yaw, roll = head_pose_estimator.estimate(face_points, frame.shape)
                 head_score = head_pose_estimator.get_head_score(pitch, yaw, roll)
+                _last_head_score = head_score  # 다음 프레임 미검출 대비 저장
 
                 # 랜드마크 그리기 (디버깅용)
                 frame = face_detector.draw_landmarks(frame, landmarks)

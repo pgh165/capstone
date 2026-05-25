@@ -40,9 +40,9 @@ class FaceDetector:
             base_options=BaseOptions(model_asset_buffer=model_data),
             running_mode=VisionRunningMode.VIDEO,
             num_faces=1,
-            min_face_detection_confidence=0.5,
-            min_face_presence_confidence=0.5,
-            min_tracking_confidence=0.5,
+            min_face_detection_confidence=0.3,
+            min_face_presence_confidence=0.3,
+            min_tracking_confidence=0.3,
             output_face_blendshapes=False,
             output_facial_transformation_matrixes=False,
         )
