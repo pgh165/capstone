@@ -26,7 +26,7 @@ flowchart TD
     end
 
     subgraph SCORING["졸음 점수 산출"]
-        DJ["DrowsinessJudge\nEMA 스무딩 α=0.15\n제곱 변환(x²/100)\nW1=0.45 / W2=0.30 / W3=0.25"]
+        DJ["DrowsinessJudge\nEMA 스무딩 α=0.15\n1.5승 변환(x^1.5/10)\nW1=0.45 / W2=0.30 / W3=0.25"]
         AJ["AIJudge\ngemma4:e4b\n5초 비동기 판정"]
     end
 
@@ -150,8 +150,8 @@ raw = W1×EAR + W2×MAR + W3×Head
   W2 = 0.30 (하품)
   W3 = 0.25 (고개 기울기)
 
-제곱 변환 (초반 둔감, 고점 민감):
-  score_curved = raw² / 100
+1.5승 변환 (제곱보다 이른 감지, 선형보다 오경보 억제):
+  score_curved = raw^1.5 / 10
 
 EMA 스무딩 (α = 0.15, 급격한 변화 방지):
   drowsiness_score = α × score_curved + (1-α) × prev
@@ -306,7 +306,7 @@ capstone/
 │   ├── drowsiness.py        # EAR / MAR / PERCLOS 계산 (개인 임계값 지원)
 │   ├── calibration.py       # 세션 초반 EAR/MAR 개인 기준값 자동 캘리브레이션
 │   ├── head_pose.py         # 고개 기울기 추정 (Pitch/Roll, Yaw 제외)
-│   ├── judge.py             # 종합 졸음 점수 (EMA + 제곱 변환)
+│   ├── judge.py             # 종합 졸음 점수 (EMA + 1.5승 변환)
 │   ├── ai_judge.py          # gemma4:e4b 비동기 판정
 │   ├── fatigue_manager.py   # 피로도 추적 + 가이드 추천
 │   ├── recovery_guide.py    # 가이드 데이터 출력
