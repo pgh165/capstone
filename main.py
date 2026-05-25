@@ -133,11 +133,6 @@ def main():
 
     print("[main] 모든 모듈 초기화 완료")
 
-    # 개인화 회복 프로필 로드 (DB 이력 기반)
-    history = db_writer.get_recovery_history()
-    if history:
-        fatigue_manager.load_recovery_profile(history)
-
     # Step 3: 시간대별 피로 패턴 로드
     hourly_pattern = db_writer.get_hourly_fatigue_pattern()
     if hourly_pattern:
@@ -155,7 +150,6 @@ def main():
 
     last_db_save = time.time()
     last_fatigue_log = time.time()
-    last_profile_refresh = time.time()
     last_status_write = time.time()
     frame_count = 0
     drowsiness_score = 0.0   # 첫 프레임 rule_score 참조 전 초기화
@@ -278,100 +272,47 @@ def main():
                     fatigue_status['fatigue_score'], drowsiness_score, alert_level
                 )
                 if pomo_ev and pomo_ev['event'] == 'break_needed':
-                    if not fatigue_manager.has_active_recovery:
-                        dominant_cause = fatigue_manager.get_dominant_cause()
-                        guide_level = fatigue_level if fatigue_level != "good" else "caution"
-                        guide_types = (fatigue_manager.get_recommended_guide()
-                                       or ["eye_rest"])
+                    dominant_cause = fatigue_manager.get_dominant_cause()
+                    guide_level = fatigue_level if fatigue_level != "good" else "caution"
+                    guide_types = (fatigue_manager.get_recommended_guide()
+                                   or ["eye_rest"])
 
-                        # 가이드 콘솔 출력
-                        recovery_guide.display_guides_for_level(
-                            guide_level, guide_types, dominant_cause,
-                        )
-
-                        # 포모도로 휴식 전환
-                        break_ev = pomodoro.start_break(
-                            fatigue_level,
-                            fatigue_status['fatigue_score'],
-                            drowsiness_score,
-                        )
-
-                        # TTS 안내
-                        forced = pomo_ev.get('forced', False)
-                        tts_msg = (
-                            f"{'위험 수준! ' if forced else ''}"
-                            f"휴식 시간입니다. {break_ev['break_min']}분 쉬어갑니다."
-                        )
-                        voice.speak(tts_msg)
-
-                        # LLM 개인화 코칭 요청
-                        profile_stats = (
-                            fatigue_manager.recovery_profile.get_stats_summary()
-                        )
-                        if profile_stats:
-                            qualified = [
-                                (gt, s) for gt, s in profile_stats.items()
-                                if s["total"] >= 3
-                            ]
-                            qualified.sort(key=lambda x: -x[1]["rate"])
-                            detail = ", ".join(
-                                f"{gt}(성공률{s['rate']*100:.0f}%)"
-                                for gt, s in qualified
-                            ) if qualified else ", ".join(
-                                f"{gt}={s['success']}/{s['total']}"
-                                for gt, s in profile_stats.items()
-                            )
-                            history_summary = detail
-                        else:
-                            history_summary = ""
-                        llm_coach.request_coaching({
-                            "fatigue_level": fatigue_level,
-                            "fatigue_score": fatigue_status['fatigue_score'],
-                            "dominant_cause": dominant_cause,
-                            "guide_types": guide_types,
-                            "work_min": fatigue_status['continuous_work_min'],
-                            "drowsy_count": fatigue_status['drowsy_count_30min'],
-                            "recovery_history_summary": history_summary,
-                        })
-
-                        # 회복 세션 시작 (효과 검증용)
-                        guides_data = recovery_guide.get_guides_for_level(
-                            guide_level, guide_types,
-                        )
-                        max_duration = max(
-                            (g.get("duration_sec", 60) for g in guides_data),
-                            default=60,
-                        )
-                        fatigue_manager.start_recovery_session(
-                            guide_types, drowsiness_score, max_duration,
-                        )
-
-            # ── 휴식 중: 회복 세션 진행 + 완료 감지
-            elif pomodoro.state == pomodoro.BREAK:
-                # 회복 세션 효과 검증
-                if fatigue_manager.has_active_recovery:
-                    recovery_result = fatigue_manager.update_recovery_session(
-                        drowsiness_score, ear_value, mar_value,
-                        face_detected=(landmarks is not None),
+                    # 가이드 콘솔 출력
+                    recovery_guide.display_guides_for_level(
+                        guide_level, guide_types, dominant_cause,
                     )
-                    if recovery_result and "effective" in recovery_result:
-                        db_writer.save_recovery_action({
-                            "guide_type": ",".join(recovery_result["guide_types"]),
-                            "dominant_cause": recovery_result.get("dominant_cause", ""),
-                            "fatigue_before": int(recovery_result["fatigue_before"]),
-                            "fatigue_after": int(recovery_result["fatigue_after"]),
-                            "drowsiness_before": int(recovery_result["drowsiness_before"]),
-                            "drowsiness_after": int(recovery_result["drowsiness_after"]),
-                            "duration_sec": recovery_result["duration_sec"],
-                            "effective": recovery_result["effective"],
-                        })
-                        history = db_writer.get_recovery_history()
-                        if history:
-                            fatigue_manager.load_recovery_profile(history)
-                        if not recovery_result["effective"]:
-                            print("[recovery] 추가 휴식이 필요합니다.")
 
-                # 휴식 완료 → 다음 작업 사이클 시작
+                    # 포모도로 휴식 전환
+                    break_ev = pomodoro.start_break(
+                        fatigue_level,
+                        fatigue_status['fatigue_score'],
+                        drowsiness_score,
+                    )
+
+                    # TTS 안내
+                    forced = pomo_ev.get('forced', False)
+                    tts_msg = (
+                        f"{'위험 수준! ' if forced else ''}"
+                        f"휴식 시간입니다. {break_ev['break_min']}분 쉬어갑니다."
+                    )
+                    voice.speak(tts_msg)
+
+                    # LLM 개인화 코칭 요청
+                    llm_coach.request_coaching({
+                        "fatigue_level": fatigue_level,
+                        "fatigue_score": fatigue_status['fatigue_score'],
+                        "dominant_cause": dominant_cause,
+                        "guide_types": guide_types,
+                        "work_min": fatigue_status['continuous_work_min'],
+                        "drowsy_count": fatigue_status['drowsy_count_30min'],
+                        "recovery_history_summary": "",
+                    })
+
+                    # 피로 회복 적용
+                    fatigue_manager.apply_recovery()
+
+            # ── 휴식 중: 완료 감지
+            elif pomodoro.state == pomodoro.BREAK:
                 done_ev = pomodoro.update_break()
                 if done_ev:
                     next_ev = pomodoro.start(

@@ -1,7 +1,7 @@
 """
 피로도 관리 모듈
 
-연속 작업 시간, 졸음 감지 빈도, 환경 스트레스를 추적하여
+연속 작업 시간, 졸음 감지 빈도를 추적하여
 누적 피로도를 산출하고 피로 해소 가이드 종류를 추천한다.
 선형 보간으로 부드러운 점수 전환을 구현한다.
 """
@@ -26,231 +26,6 @@ def _lerp_score(value, bp_x, bp_y):
     x0, x1 = bp_x[i], bp_x[i + 1]
     t = (value - x0) / (x1 - x0)
     return bp_y[i] + t * (bp_y[i + 1] - bp_y[i])
-
-
-class RecoveryProfile:
-    """개인별 회복 가이드 효과 프로필.
-
-    DB의 recovery_actions 이력을 분석하여 가이드별 성공률을 계산하고,
-    개인에게 효과적인 가이드를 우선 추천한다.
-    """
-
-    MIN_SAMPLES = 3     # 개인화 적용 최소 데이터 수
-    LOW_RATE = 0.3      # 이 성공률 미만이면 비효과적으로 판정
-    HIGH_RATE = 0.7     # 이 성공률 이상이면 보너스 추천 대상
-
-    def __init__(self):
-        self._guide_stats = {}  # {guide_type: {"success": n, "total": n}}
-
-    def load_from_history(self, history):
-        """recovery_actions 이력에서 가이드별 통계를 계산한다.
-
-        Args:
-            history (list[dict]): DB에서 조회한 회복 이력.
-                각 dict에 guide_type(쉼표 구분), effective 필드 필요.
-        """
-        stats = {}
-        for record in history:
-            guide_str = record.get("guide_type", "")
-            effective = bool(record.get("effective", 0))
-
-            for gt in guide_str.split(","):
-                gt = gt.strip()
-                if not gt:
-                    continue
-                if gt not in stats:
-                    stats[gt] = {"success": 0, "total": 0}
-                stats[gt]["total"] += 1
-                if effective:
-                    stats[gt]["success"] += 1
-
-        self._guide_stats = stats
-
-    def get_success_rate(self, guide_type):
-        """특정 가이드의 개인별 성공률을 반환한다.
-
-        Returns:
-            float or None: 0.0~1.0 성공률. 데이터 부족 시 None.
-        """
-        stat = self._guide_stats.get(guide_type)
-        if stat is None or stat["total"] < self.MIN_SAMPLES:
-            return None
-        return stat["success"] / stat["total"]
-
-    def rank_guides(self, base_guides, cause_guides):
-        """기본 + 원인별 가이드를 개인 효과순으로 재정렬한다.
-
-        - 기본 가이드(base)는 순서 유지
-        - 원인별 가이드는 성공률 높은 순으로 정렬
-        - 성공률 30% 미만 가이드는 제외
-        - 성공률 70% 이상이면서 목록에 없는 가이드를 보너스 추천
-
-        Args:
-            base_guides (list[str]): 단계별 기본 가이드 목록.
-            cause_guides (list[str]): 원인별 추가 가이드 목록.
-
-        Returns:
-            list[str]: 개인화 정렬된 가이드 목록.
-        """
-        result = list(base_guides)
-
-        # 원인별 가이드를 성공률 순 정렬 (비효과적 제외)
-        scored = []
-        for g in cause_guides:
-            rate = self.get_success_rate(g)
-            if rate is not None and rate < self.LOW_RATE:
-                continue  # 성공률 30% 미만 → 제외
-            # 데이터 부족(None)이면 기본 0.5로 중간 순위
-            scored.append((g, rate if rate is not None else 0.5))
-        scored.sort(key=lambda x: -x[1])
-
-        for g, _ in scored:
-            if g not in result:
-                result.append(g)
-
-        # 보너스: 과거 성공률 70% 이상인 가이드 추가 추천
-        for g, stat in self._guide_stats.items():
-            if g in result or stat["total"] < self.MIN_SAMPLES:
-                continue
-            rate = stat["success"] / stat["total"]
-            if rate >= self.HIGH_RATE:
-                result.append(g)
-
-        return result
-
-    @property
-    def has_data(self):
-        """개인화에 충분한 데이터가 있는지 반환한다."""
-        return any(
-            s["total"] >= self.MIN_SAMPLES
-            for s in self._guide_stats.values()
-        )
-
-    def get_stats_summary(self):
-        """가이드별 통계 요약을 반환한다."""
-        summary = {}
-        for gt, stat in self._guide_stats.items():
-            total = stat["total"]
-            rate = stat["success"] / total if total > 0 else 0
-            summary[gt] = {
-                "total": total,
-                "success": stat["success"],
-                "rate": round(rate, 2),
-            }
-        return summary
-
-
-class RecoverySession:
-    """피로 회복 세션을 추적하고 생체 데이터로 효과를 검증한다.
-
-    흐름: recovering(가이드 수행) → evaluating(생체 재측정) → done(결과 산출)
-    """
-
-    def __init__(self, guide_types, fatigue_before, drowsiness_before,
-                 duration_sec, dominant_cause=""):
-        self.guide_types = guide_types
-        self.fatigue_before = fatigue_before
-        self.drowsiness_before = drowsiness_before
-        self.duration_sec = duration_sec
-        self.dominant_cause = dominant_cause
-        self.start_time = time.time()
-
-        # 평가 단계 데이터
-        self._eval_start_time = None
-        self._eval_samples = []
-
-        # recovering → evaluating → done
-        self.phase = "recovering"
-
-    def update(self, now, drowsiness_score, ear_value, mar_value,
-               face_detected=True):
-        """매 프레임 호출. 현재 phase를 반환한다.
-
-        Args:
-            face_detected (bool): 얼굴이 감지되었는지 여부.
-                recovering 단계에서는 얼굴 복귀를 대기하고,
-                evaluating 단계에서는 얼굴이 있을 때만 샘플을 수집한다.
-        """
-        if self.phase == "recovering":
-            time_elapsed = now - self.start_time >= self.duration_sec
-            if time_elapsed and face_detected:
-                # 가이드 시간 경과 + 사용자가 카메라 앞에 복귀
-                self.phase = "evaluating"
-                self._eval_start_time = now
-                print("[recovery] 사용자 복귀 감지 — 효과 평가를 시작합니다.")
-            return self.phase
-
-        if self.phase == "evaluating":
-            if not face_detected:
-                # 평가 중 얼굴 미검출 → 샘플 수집 건너뜀
-                return self.phase
-            self._eval_samples.append({
-                "drowsiness": drowsiness_score,
-                "ear": ear_value,
-                "mar": mar_value,
-            })
-            eval_elapsed = now - self._eval_start_time
-            if (eval_elapsed >= config.RECOVERY_EVAL_DURATION
-                    and len(self._eval_samples) >= config.RECOVERY_EVAL_MIN_SAMPLES):
-                self.phase = "done"
-            return self.phase
-
-        return self.phase
-
-    def get_result(self, fatigue_after):
-        """회복 효과 평가 결과를 반환한다.
-
-        Returns:
-            dict: effective(bool), 각종 before/after 수치, 판정 사유.
-        """
-        if not self._eval_samples:
-            return {
-                "effective": False,
-                "reason": "평가 데이터 없음",
-                "guide_types": self.guide_types,
-            }
-
-        n = len(self._eval_samples)
-        avg_drowsiness = sum(s["drowsiness"] for s in self._eval_samples) / n
-        avg_ear = sum(s["ear"] for s in self._eval_samples) / n
-        avg_mar = sum(s["mar"] for s in self._eval_samples) / n
-
-        fatigue_drop = self.fatigue_before - fatigue_after
-        drowsiness_drop = self.drowsiness_before - avg_drowsiness
-
-        # 판정: 피로도 10점 이상 하락 OR 평균 졸음 점수 30 이하
-        effective = (
-            fatigue_drop >= config.RECOVERY_EFFECTIVE_FATIGUE_DROP
-            or avg_drowsiness <= config.RECOVERY_EFFECTIVE_DROWSY_MAX
-        )
-
-        reasons = []
-        if fatigue_drop >= config.RECOVERY_EFFECTIVE_FATIGUE_DROP:
-            reasons.append(f"피로도 {fatigue_drop:.1f}점 감소")
-        if avg_drowsiness <= config.RECOVERY_EFFECTIVE_DROWSY_MAX:
-            reasons.append(f"졸음 점수 {avg_drowsiness:.1f}점으로 정상 범위")
-        if not reasons:
-            reasons.append(
-                f"피로도 {fatigue_drop:.1f}점 변화, "
-                f"졸음 점수 {avg_drowsiness:.1f}점으로 기준 미달"
-            )
-
-        return {
-            "effective": effective,
-            "reason": " / ".join(reasons),
-            "guide_types": self.guide_types,
-            "dominant_cause": self.dominant_cause,
-            "duration_sec": self.duration_sec,
-            "fatigue_before": round(self.fatigue_before, 1),
-            "fatigue_after": round(fatigue_after, 1),
-            "fatigue_drop": round(fatigue_drop, 1),
-            "drowsiness_before": round(self.drowsiness_before, 1),
-            "drowsiness_after": round(avg_drowsiness, 1),
-            "drowsiness_drop": round(drowsiness_drop, 1),
-            "avg_ear": round(avg_ear, 4),
-            "avg_mar": round(avg_mar, 4),
-            "eval_samples": n,
-        }
 
 
 class FatigueManager:
@@ -288,12 +63,6 @@ class FatigueManager:
         # work_score 캐싱 (분 단위로만 변하므로 1초마다 갱신)
         self._work_score_cache = 0.0
         self._work_score_last_update = 0.0
-
-        # 회복 세션
-        self._recovery_session = None
-
-        # 개인화 회복 프로필
-        self._recovery_profile = RecoveryProfile()
 
     # ──────────────────────────────────────────────────────────────
     #  메인 업데이트 (매 사이클 호출)
@@ -334,13 +103,10 @@ class FatigueManager:
 
         # 피로도는 올라갈 수 있고, 정상 상태에서는 천천히 내려감
         if new_score > self._fatigue_score:
-            # 피로 증가: 바로 반영
             self._fatigue_score = new_score
         elif self._last_normal_time is not None:
-            # 정상 상태 지속 중: 자연 감소 적용
             normal_duration = now - self._last_normal_time
             if normal_duration >= self._natural_recovery_interval:
-                # 60초 이상 정상이면 회복 시작
                 if now - self._last_recovery_tick >= self._natural_recovery_interval:
                     self._fatigue_score = max(self._fatigue_score - self._natural_recovery_rate, new_score)
                     self._fatigue_score = round(max(self._fatigue_score, 0), 1)
@@ -381,13 +147,11 @@ class FatigueManager:
                 self._last_normal_time = now
                 self._last_recovery_tick = now
         else:
-            # 졸음 감지되면 자연 회복 타이머 리셋
             self._last_normal_time = None
 
     def get_drowsy_count_30min(self):
         """최근 30분간 졸음 감지 횟수를 반환한다."""
         return len(self._drowsiness_events)
-
 
     # ──────────────────────────────────────────────────────────────
     #  피로 단계 및 가이드 추천
@@ -445,28 +209,8 @@ class FatigueManager:
         }
         return max(scores, key=scores.get)
 
-    def load_recovery_profile(self, history):
-        """DB 회복 이력으로 개인화 프로필을 갱신한다.
-
-        Args:
-            history (list[dict]): db_writer.get_recovery_history() 결과.
-        """
-        self._recovery_profile.load_from_history(history)
-        if self._recovery_profile.has_data:
-            stats = self._recovery_profile.get_stats_summary()
-            print(f"[fatigue] 개인화 프로필 로드: {stats}")
-
-    @property
-    def recovery_profile(self):
-        """현재 개인화 회복 프로필을 반환한다."""
-        return self._recovery_profile
-
     def get_recommended_guide(self):
         """피로 단계와 주된 원인에 따른 추천 가이드 유형 리스트를 반환한다.
-
-        피로의 주된 원인(연속 작업/졸음 빈도/환경 스트레스)을 분석하여
-        단계별 기본 가이드에 원인별 맞춤 가이드를 추가한다.
-        개인화 프로필이 있으면 효과 높은 가이드를 우선 추천한다.
 
         Returns:
             list[str]: 추천 가이드 유형 목록.
@@ -480,11 +224,6 @@ class FatigueManager:
         base_guides = list(mapping["base"])
         cause_guides = list(mapping[dominant])
 
-        # 개인화 프로필이 있으면 효과순 정렬 적용
-        if self._recovery_profile.has_data:
-            return self._recovery_profile.rank_guides(base_guides, cause_guides)
-
-        # 프로필 없으면 기본 순서
         for g in cause_guides:
             if g not in base_guides:
                 base_guides.append(g)
@@ -503,81 +242,12 @@ class FatigueManager:
             amount = config.RECOVERY_REDUCTION
         self._fatigue_score = max(self._fatigue_score - amount, 0)
         self._fatigue_score = round(self._fatigue_score, 1)
-        # 회복 시 작업 타이머도 리셋하여 재충전 효과
         self.reset_work_timer()
-        # 졸음 이벤트도 일부 제거 (오래된 것부터)
         remove_count = min(len(self._drowsiness_events), 10)
         for _ in range(remove_count):
             if self._drowsiness_events:
                 self._drowsiness_events.popleft()
         print(f"[fatigue] 피로 회복 적용: -{amount}점 → 현재 {self._fatigue_score}점")
-
-    # ──────────────────────────────────────────────────────────────
-    #  회복 세션 관리 (생체 데이터 기반 효과 검증)
-    # ──────────────────────────────────────────────────────────────
-    @property
-    def has_active_recovery(self):
-        """진행 중인 회복 세션이 있는지 반환한다."""
-        return self._recovery_session is not None
-
-    def start_recovery_session(self, guide_types, drowsiness_score,
-                               duration_sec):
-        """회복 세션을 시작한다.
-
-        Args:
-            guide_types (list[str]): 제공된 가이드 유형 목록.
-            drowsiness_score (float): 세션 시작 시점의 졸음 점수.
-            duration_sec (int): 회복 가이드 수행 시간 (초).
-        """
-        self._recovery_session = RecoverySession(
-            guide_types=guide_types,
-            fatigue_before=self._fatigue_score,
-            drowsiness_before=drowsiness_score,
-            duration_sec=duration_sec,
-            dominant_cause=self.get_dominant_cause(),
-        )
-        print(
-            f"[recovery] 회복 세션 시작 "
-            f"(피로도={self._fatigue_score}, "
-            f"가이드={guide_types}, "
-            f"소요={duration_sec}초)"
-        )
-
-    def update_recovery_session(self, drowsiness_score, ear_value, mar_value,
-                               face_detected=True):
-        """회복 세션 상태를 갱신한다. 매 프레임 호출.
-
-        Args:
-            face_detected (bool): 얼굴이 감지되었는지 여부.
-
-        Returns:
-            dict or None:
-              - 진행 중: {"phase": "recovering"} 또는 {"phase": "evaluating"}
-              - 완료: 효과 검증 결과 딕셔너리 (effective, reason, before/after 등)
-              - 세션 없음: None
-        """
-        if self._recovery_session is None:
-            return None
-
-        now = time.time()
-        phase = self._recovery_session.update(
-            now, drowsiness_score, ear_value, mar_value, face_detected,
-        )
-
-        if phase != "done":
-            return {"phase": phase}
-
-        # 평가 완료 — 결과 산출
-        result = self._recovery_session.get_result(self._fatigue_score)
-
-        if result["effective"]:
-            self.apply_recovery()
-            print(f"[recovery] 회복 효과 확인: {result['reason']}")
-        else:
-            print(f"[recovery] 회복 부족: {result['reason']}")
-
-        self._recovery_session = None
-        return result
 
     def reset_work_timer(self):
         """연속 작업 시간 타이머를 리셋한다."""
