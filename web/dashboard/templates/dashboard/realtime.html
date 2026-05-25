@@ -1,0 +1,698 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>실시간 졸음 모니터 — AI 포모도로 타이머</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg:       #0f1117;
+      --surface:  #1a1d27;
+      --border:   #2a2d3a;
+      --text:     #e8eaf0;
+      --muted:    #6b7080;
+      --normal:   #4caf50;
+      --caution:  #ffc107;
+      --warning:  #ff7043;
+      --danger:   #f44336;
+      --accent:   #5c8dff;
+      --radius:   12px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Noto Sans KR', sans-serif;
+      min-height: 100vh;
+    }
+
+    /* ── 헤더 ── */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 28px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+      gap: 16px;
+    }
+    header h1 { font-size: 1.1rem; font-weight: 700; }
+    .header-nav { display: flex; gap: 4px; }
+    .header-nav a {
+      color: var(--muted);
+      font-size: 0.82rem;
+      text-decoration: none;
+      padding: 5px 12px;
+      border-radius: 6px;
+      transition: background 0.15s, color 0.15s;
+    }
+    .header-nav a:hover { background: rgba(255,255,255,0.07); color: var(--text); }
+    .header-nav a.active {
+      background: var(--accent);
+      color: #fff;
+      font-weight: 500;
+    }
+    #conn-badge {
+      font-size: 0.75rem;
+      padding: 3px 10px;
+      border-radius: 20px;
+      background: #333;
+      color: var(--muted);
+    }
+    #conn-badge.live  { background: #1b3a1f; color: var(--normal); }
+    #conn-badge.stale { background: #3a2e1b; color: var(--caution); }
+    #conn-badge.off   { background: #3a1b1b; color: var(--danger); }
+
+    /* ── 레이아웃 ── */
+    main {
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      grid-template-rows: auto 1fr;
+      gap: 16px;
+      padding: 20px 28px;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    /* ── 카드 공통 ── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px 20px;
+    }
+    .card h4 {
+      font-size: 0.75rem;
+      font-weight: 500;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      margin-bottom: 8px;
+    }
+
+    /* ── 왼쪽 패널 ── */
+    .left-panel {
+      grid-row: 1 / 3;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    /* 졸음 게이지 */
+    .gauge-card { text-align: center; padding: 24px 20px; }
+    .gauge-wrap {
+      position: relative;
+      width: 180px;
+      height: 180px;
+      margin: 12px auto 6px;
+    }
+    .gauge-wrap canvas { width: 180px !important; height: 180px !important; }
+    #gauge-value {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 2.6rem;
+      font-weight: 700;
+      font-family: 'JetBrains Mono', monospace;
+      line-height: 1;
+    }
+    #gauge-label {
+      font-size: 0.9rem;
+      font-weight: 600;
+      letter-spacing: .05em;
+      margin-top: 4px;
+    }
+
+    /* 경보 단계 배지 */
+    #alert-badge {
+      display: inline-block;
+      padding: 5px 18px;
+      border-radius: 20px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      letter-spacing: .08em;
+      background: #1b3a1f; color: var(--normal);
+      margin-top: 8px;
+    }
+
+    /* 수치 그리드 */
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .metric-item { text-align: center; }
+    .metric-label { font-size: 0.7rem; color: var(--muted); margin-bottom: 2px; }
+    .metric-value {
+      font-size: 1.2rem;
+      font-weight: 600;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* 포모도로 카드 */
+    .pomo-state {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: var(--accent);
+      margin-bottom: 10px;
+    }
+    .pomo-bar-wrap {
+      background: var(--border);
+      border-radius: 6px;
+      height: 8px;
+      overflow: hidden;
+      margin-bottom: 8px;
+    }
+    #pomo-bar {
+      height: 100%;
+      border-radius: 6px;
+      background: var(--accent);
+      width: 0%;
+      transition: width .5s ease;
+    }
+    .pomo-detail {
+      font-size: 0.78rem;
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+    }
+
+    /* 피로도 카드 */
+    .fatigue-bar-wrap {
+      background: var(--border);
+      border-radius: 6px;
+      height: 10px;
+      overflow: hidden;
+      margin: 8px 0 6px;
+    }
+    #fatigue-bar {
+      height: 100%;
+      border-radius: 6px;
+      background: var(--normal);
+      width: 0%;
+      transition: width .5s ease, background .5s ease;
+    }
+    .fatigue-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    #fatigue-score-val {
+      font-size: 1.5rem;
+      font-weight: 700;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    #fatigue-level-val {
+      font-size: 0.8rem;
+      padding: 2px 10px;
+      border-radius: 12px;
+      background: #1b3a1f;
+      color: var(--normal);
+    }
+
+    /* ── 오른쪽 패널 ── */
+    .right-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .chart-card { padding: 18px 20px 14px; }
+    .chart-card h4 { margin-bottom: 12px; }
+    .chart-card canvas { max-height: 200px; }
+
+    .bottom-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+    .bottom-row .chart-card canvas { max-height: 160px; }
+
+    /* ── 오프라인 오버레이 ── */
+    #offline-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.7);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 12px;
+    }
+    #offline-overlay.show { display: flex; }
+    #offline-overlay p { font-size: 1.1rem; color: var(--danger); font-weight: 600; }
+    #offline-overlay small { color: var(--muted); }
+  </style>
+</head>
+<body>
+
+<div id="offline-overlay">
+  <p>⚠ main.py 연결 끊김</p>
+  <small>프로그램이 실행 중인지 확인하세요.</small>
+  <small id="offline-last-seen" style="color:#888;margin-top:4px"></small>
+</div>
+
+<header>
+  <h1>🍅 AI 포모도로 타이머</h1>
+  <div style="display:flex;align-items:center;gap:12px">
+    <nav class="header-nav">
+      <a href="/">📊 대시보드</a>
+      <a href="/realtime/" class="active">📡 실시간</a>
+      <a href="/settings/">⚙ 설정</a>
+    </nav>
+    <span id="conn-badge" class="off">● 연결 대기</span>
+  </div>
+</header>
+
+<main>
+  <!-- ── 왼쪽 패널 ── -->
+  <div class="left-panel">
+
+    <!-- 졸음 게이지 -->
+    <div class="card gauge-card">
+      <h4>실시간 졸음 점수</h4>
+      <div class="gauge-wrap">
+        <canvas id="gaugeChart"></canvas>
+        <div id="gauge-value">--</div>
+      </div>
+      <div id="gauge-label" style="color:var(--normal)">NORMAL</div>
+      <div><span id="alert-badge">L0 · 정상</span></div>
+    </div>
+
+    <!-- 세부 수치 -->
+    <div class="card">
+      <h4>생체 수치</h4>
+      <div class="metrics-grid">
+        <div class="metric-item">
+          <div class="metric-label">PERCLOS</div>
+          <div class="metric-value" id="val-perclos">-- %</div>
+        </div>
+        <div class="metric-item">
+          <div class="metric-label">하품 (3분)</div>
+          <div class="metric-value" id="val-yawn">-- 회</div>
+        </div>
+        <div class="metric-item">
+          <div class="metric-label">EAR</div>
+          <div class="metric-value" id="val-ear">--</div>
+        </div>
+        <div class="metric-item">
+          <div class="metric-label">MAR</div>
+          <div class="metric-value" id="val-mar">--</div>
+        </div>
+        <div class="metric-item">
+          <div class="metric-label">Pitch</div>
+          <div class="metric-value" id="val-pitch">--°</div>
+        </div>
+        <div class="metric-item">
+          <div class="metric-label">Yaw</div>
+          <div class="metric-value" id="val-yaw">--°</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 피로도 -->
+    <div class="card">
+      <h4>누적 피로도</h4>
+      <div class="fatigue-row">
+        <div id="fatigue-score-val">--</div>
+        <div id="fatigue-level-val">대기</div>
+      </div>
+      <div class="fatigue-bar-wrap">
+        <div id="fatigue-bar"></div>
+      </div>
+    </div>
+
+    <!-- 포모도로 -->
+    <div class="card">
+      <h4>🍅 포모도로 타이머</h4>
+      <div class="pomo-state" id="pomo-state">대기 중</div>
+      <div class="pomo-bar-wrap">
+        <div id="pomo-bar"></div>
+      </div>
+      <div class="pomo-detail">
+        <span id="pomo-elapsed">--</span>
+        <span id="pomo-remaining">남은 시간: --</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px">
+        <div style="font-size:.78rem;color:var(--muted)" id="pomo-cycle"></div>
+        <div style="font-size:.78rem;color:var(--muted)">완료 <span id="pomo-done" style="font-weight:600;color:var(--accent)">0</span>회</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── 오른쪽 패널 ── -->
+  <div class="right-panel">
+
+    <!-- 졸음 점수 라인 차트 (최근 60초) -->
+    <div class="card chart-card">
+      <h4>졸음 점수 추이 — 최근 60초</h4>
+      <canvas id="lineChart"></canvas>
+    </div>
+
+    <div class="bottom-row">
+      <!-- PERCLOS 차트 -->
+      <div class="card chart-card">
+        <h4>PERCLOS 추이</h4>
+        <canvas id="perclosChart"></canvas>
+      </div>
+      <!-- 피로도 차트 -->
+      <div class="card chart-card">
+        <h4>피로도 추이</h4>
+        <canvas id="fatigueChart"></canvas>
+      </div>
+    </div>
+
+  </div>
+</main>
+
+<script>
+const ALERT_COLORS = {
+  0: { color: '#4caf50', bg: '#1b3a1f', label: 'L0 · 정상',   text: 'NORMAL'  },
+  1: { color: '#ffc107', bg: '#3a2e1b', label: 'L1 · 주의',   text: 'CAUTION' },
+  2: { color: '#ff7043', bg: '#3a1e1b', label: 'L2 · 경고',   text: 'WARNING' },
+  3: { color: '#f44336', bg: '#3a1b1b', label: 'L3 · 위험',   text: 'DANGER'  },
+};
+const FATIGUE_COLORS = {
+  good:    { color: '#4caf50', bg: '#1b3a1f', label: '양호' },
+  caution: { color: '#ffc107', bg: '#3a2e1b', label: '주의' },
+  warning: { color: '#ff7043', bg: '#3a1e1b', label: '경고' },
+  danger:  { color: '#f44336', bg: '#3a1b1b', label: '위험' },
+};
+
+const MAX_POINTS = 60;
+const STORAGE_KEY = 'rt_chart_history';
+
+function loadHistory() {
+  try {
+    const saved = sessionStorage.getItem(STORAGE_KEY);
+    if (saved) return JSON.parse(saved);
+  } catch (e) {}
+  return null;
+}
+
+function saveHistory() {
+  try {
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ labels, drowData, percData, fatData }));
+  } catch (e) {}
+}
+
+const _h = loadHistory();
+const labels   = _h ? _h.labels   : Array(MAX_POINTS).fill('');
+const drowData = _h ? _h.drowData : Array(MAX_POINTS).fill(null);
+const percData = _h ? _h.percData : Array(MAX_POINTS).fill(null);
+const fatData  = _h ? _h.fatData  : Array(MAX_POINTS).fill(null);
+
+// ── 게이지 차트 ─────────────────────────────────────────────
+const gaugeCtx = document.getElementById('gaugeChart').getContext('2d');
+const gaugeChart = new Chart(gaugeCtx, {
+  type: 'doughnut',
+  data: {
+    datasets: [{
+      data: [0, 100],
+      backgroundColor: ['#4caf50', '#2a2d3a'],
+      borderWidth: 0,
+      circumference: 270,
+      rotation: 225,
+    }]
+  },
+  options: {
+    cutout: '72%',
+    plugins: { legend: { display: false }, tooltip: { enabled: false } },
+    animation: { duration: 400 },
+  }
+});
+
+// ── 라인 차트 ────────────────────────────────────────────────
+const lineCtx = document.getElementById('lineChart').getContext('2d');
+const lineChart = new Chart(lineCtx, {
+  type: 'line',
+  data: {
+    labels,
+    datasets: [{
+      label: '졸음 점수',
+      data: drowData,
+      borderColor: '#5c8dff',
+      backgroundColor: 'rgba(92,141,255,.1)',
+      borderWidth: 2,
+      pointRadius: 0,
+      fill: true,
+      tension: 0.4,
+    }]
+  },
+  options: {
+    responsive: true,
+    animation: { duration: 200 },
+    scales: {
+      x: { display: false },
+      y: {
+        min: 0, max: 100,
+        ticks: { color: '#6b7080', stepSize: 20 },
+        grid: { color: '#2a2d3a' },
+      }
+    },
+    plugins: {
+      legend: { display: false },
+      annotation: {
+        annotations: {
+          l1: { type: 'line', yMin: 40, yMax: 40, borderColor: '#ffc10755', borderWidth: 1, borderDash: [4,4] },
+          l2: { type: 'line', yMin: 70, yMax: 70, borderColor: '#ff704355', borderWidth: 1, borderDash: [4,4] },
+          l3: { type: 'line', yMin: 85, yMax: 85, borderColor: '#f4433655', borderWidth: 1, borderDash: [4,4] },
+        }
+      }
+    }
+  }
+});
+
+// ── PERCLOS 차트 ─────────────────────────────────────────────
+const perclosCtx = document.getElementById('perclosChart').getContext('2d');
+const perclosChart = new Chart(perclosCtx, {
+  type: 'line',
+  data: {
+    labels,
+    datasets: [{
+      label: 'PERCLOS (%)',
+      data: percData,
+      borderColor: '#ab47bc',
+      backgroundColor: 'rgba(171,71,188,.1)',
+      borderWidth: 2,
+      pointRadius: 0,
+      fill: true,
+      tension: 0.4,
+    }]
+  },
+  options: {
+    responsive: true,
+    animation: { duration: 200 },
+    scales: {
+      x: { display: false },
+      y: {
+        min: 0, max: 65,
+        ticks: { color: '#6b7080' },
+        grid: { color: '#2a2d3a' },
+      }
+    },
+    plugins: { legend: { display: false } }
+  }
+});
+
+// ── 피로도 차트 ──────────────────────────────────────────────
+const fatigueCtx = document.getElementById('fatigueChart').getContext('2d');
+const fatigueChart = new Chart(fatigueCtx, {
+  type: 'line',
+  data: {
+    labels,
+    datasets: [{
+      label: '피로도',
+      data: fatData,
+      borderColor: '#26a69a',
+      backgroundColor: 'rgba(38,166,154,.1)',
+      borderWidth: 2,
+      pointRadius: 0,
+      fill: true,
+      tension: 0.4,
+    }]
+  },
+  options: {
+    responsive: true,
+    animation: { duration: 200 },
+    scales: {
+      x: { display: false },
+      y: {
+        min: 0, max: 100,
+        ticks: { color: '#6b7080' },
+        grid: { color: '#2a2d3a' },
+      }
+    },
+    plugins: { legend: { display: false } }
+  }
+});
+
+// ── 유틸 ─────────────────────────────────────────────────────
+function pushPoint(arr, val) {
+  arr.push(val);
+  if (arr.length > MAX_POINTS) arr.shift();
+}
+
+function fmtMin(min) {
+  if (min == null) return '--';
+  const m = Math.floor(min), s = Math.round((min - m) * 60);
+  return `${m}분 ${s < 10 ? '0'+s : s}초`;
+}
+
+// ── 브라우저 알림 ─────────────────────────────────────────────
+let lastNotifiedLevel = 0;
+
+function requestNotificationPermission() {
+  if ('Notification' in window && Notification.permission === 'default') {
+    Notification.requestPermission();
+  }
+}
+
+function notifyAlert(level) {
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  if (level <= lastNotifiedLevel) return;  // 같은 수준 반복 알림 방지
+  lastNotifiedLevel = level;
+  const labels = { 1: '⚠ 주의', 2: '🔶 경고', 3: '🚨 위험' };
+  const label = labels[level] ?? '';
+  if (!label) return;
+  new Notification(`졸음 ${label} 감지`, {
+    body: '잠시 휴식을 취하거나 스트레칭을 해보세요.',
+    icon: '/static/favicon.ico',
+    tag: 'drowsiness-alert'
+  });
+}
+
+requestNotificationPermission();
+
+// ── 폴링 ─────────────────────────────────────────────────────
+let failCount = 0;
+let lastSeenTime = null;
+
+async function poll() {
+  try {
+    const res  = await fetch('/api/realtime/');
+    const json = await res.json();
+
+    if (!json.success) { setOffline(); return; }
+
+    failCount = 0;
+    lastSeenTime = new Date();
+    const d = json.data;
+
+    // 연결 배지
+    const badge = document.getElementById('conn-badge');
+    if (d.stale) {
+      badge.className = 'stale'; badge.textContent = '● 데이터 지연';
+    } else {
+      badge.className = 'live'; badge.textContent = '● LIVE';
+    }
+    document.getElementById('offline-overlay').classList.remove('show');
+
+    // 게이지
+    const score = d.drowsiness_score ?? 0;
+    const al    = d.alert_level ?? 0;
+    if (al >= 1) { notifyAlert(al); } else { lastNotifiedLevel = 0; }
+    const ac    = ALERT_COLORS[al] ?? ALERT_COLORS[0];
+    gaugeChart.data.datasets[0].data = [score, 100 - score];
+    gaugeChart.data.datasets[0].backgroundColor[0] = ac.color;
+    gaugeChart.update();
+    document.getElementById('gauge-value').textContent = score;
+    document.getElementById('gauge-value').style.color  = ac.color;
+    document.getElementById('gauge-label').textContent  = ac.text;
+    document.getElementById('gauge-label').style.color  = ac.color;
+    const ab = document.getElementById('alert-badge');
+    ab.textContent = ac.label;
+    ab.style.background = ac.bg;
+    ab.style.color = ac.color;
+
+    // 수치
+    document.getElementById('val-perclos').textContent = (d.perclos ?? '--') + '%';
+    document.getElementById('val-yawn').textContent    = (d.yawn_count ?? '--') + '회';
+    document.getElementById('val-ear').textContent     = d.ear != null ? d.ear.toFixed(3) : '--';
+    document.getElementById('val-mar').textContent     = d.mar != null ? d.mar.toFixed(3) : '--';
+    document.getElementById('val-pitch').textContent   = d.pitch != null ? d.pitch.toFixed(1) + '°' : '--°';
+    document.getElementById('val-yaw').textContent     = d.yaw   != null ? d.yaw.toFixed(1)   + '°' : '--°';
+
+    // 피로도
+    const fl   = d.fatigue_level ?? 'good';
+    const fs   = d.fatigue_score ?? 0;
+    const fc   = FATIGUE_COLORS[fl] ?? FATIGUE_COLORS['good'];
+    document.getElementById('fatigue-score-val').textContent = fs;
+    const flEl = document.getElementById('fatigue-level-val');
+    flEl.textContent = fc.label;
+    flEl.style.background = fc.bg;
+    flEl.style.color = fc.color;
+    const fb = document.getElementById('fatigue-bar');
+    fb.style.width = fs + '%';
+    fb.style.background = fc.color;
+
+    // 포모도로
+    const pomo = d.pomo ?? {};
+    const state = pomo.state ?? 'idle';
+    let stateText = '대기 중', barPct = 0, elapsed = '--', remaining = '--';
+    if (state === 'working') {
+      stateText = '🍅 작업 중';
+      const planned = pomo.planned_min || 1;
+      barPct = Math.min(100, (pomo.elapsed_min / planned) * 100);
+      elapsed   = fmtMin(pomo.elapsed_min) + ' 경과';
+      remaining = '남은 시간: ' + fmtMin(pomo.remaining_min);
+    } else if (state === 'break') {
+      stateText = '💤 휴식 중';
+      const planned = pomo.planned_min || 1;
+      barPct = Math.min(100, ((planned - (pomo.remaining_min||0)) / planned) * 100);
+      elapsed   = fmtMin(pomo.elapsed_min) + ' 경과';
+      remaining = '남은 시간: ' + fmtMin(pomo.remaining_min);
+    }
+    document.getElementById('pomo-state').textContent    = stateText;
+    document.getElementById('pomo-bar').style.width      = barPct + '%';
+    document.getElementById('pomo-elapsed').textContent  = elapsed;
+    document.getElementById('pomo-remaining').textContent = remaining;
+    document.getElementById('pomo-cycle').textContent    =
+      pomo.cycle ? `사이클 ${pomo.cycle}번째` : '';
+    const doneCycles = pomo.cycle
+      ? (state === 'working' ? pomo.cycle - 1 : pomo.cycle)
+      : 0;
+    document.getElementById('pomo-done').textContent = doneCycles;
+
+    // 차트 데이터 추가
+    const now = new Date().toLocaleTimeString('ko-KR', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+    pushPoint(labels,   now);
+    pushPoint(drowData, score);
+    pushPoint(percData, d.perclos ?? null);
+    pushPoint(fatData,  fs);
+    saveHistory();
+
+    const lc = lineChart.data.datasets[0];
+    lc.borderColor = ac.color;
+    lc.backgroundColor = ac.color + '1a';
+
+    lineChart.update('none');
+    perclosChart.update('none');
+    fatigueChart.update('none');
+
+  } catch (e) {
+    failCount++;
+    if (failCount >= 3) setOffline();
+  }
+}
+
+function setOffline() {
+  document.getElementById('conn-badge').className = 'off';
+  document.getElementById('conn-badge').textContent = '● 연결 끊김';
+  document.getElementById('offline-overlay').classList.add('show');
+  if (lastSeenTime) {
+    const t = lastSeenTime.toLocaleTimeString('ko-KR', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+    document.getElementById('offline-last-seen').textContent = `마지막 수신: ${t}`;
+  }
+}
+
+poll();
+setInterval(poll, 1000);
+</script>
+</body>
+</html>

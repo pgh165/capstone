@@ -9,10 +9,6 @@ class DetectionLog(models.Model):
     head_yaw = models.FloatField(null=True)
     drowsiness_score = models.IntegerField(null=True)
     alert_level = models.IntegerField(null=True)
-    co2_ppm = models.IntegerField(null=True)
-    temperature = models.FloatField(null=True)
-    humidity = models.FloatField(null=True)
-    env_score = models.IntegerField(null=True)
 
     class Meta:
         managed = False
@@ -24,7 +20,6 @@ class FatigueLog(models.Model):
     fatigue_score = models.IntegerField(null=True)
     continuous_work_min = models.IntegerField(null=True)
     drowsy_count_30min = models.IntegerField(null=True)
-    env_stress_score = models.IntegerField(null=True)
     fatigue_level = models.CharField(max_length=20, null=True)
 
     class Meta:
@@ -71,8 +66,6 @@ class DailySummary(models.Model):
     alert_count_level2 = models.IntegerField(default=0)
     alert_count_level3 = models.IntegerField(default=0)
     peak_drowsy_time = models.TimeField(null=True)
-    avg_co2 = models.IntegerField(default=0)
-    avg_temperature = models.FloatField(default=0)
 
     class Meta:
         managed = False

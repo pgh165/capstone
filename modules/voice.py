@@ -4,7 +4,7 @@ TTS(음성 출력) 모듈
 졸음 경보와 LLM 코칭 메시지를 음성으로 출력한다.
 - 비차단 큐 기반 — 메인 루프를 절대 멈추지 않음
 - priority=True 시 대기 중인 메시지를 비우고 즉시 삽입
-- 엔진: espeak-ng(오프라인) / edge-tts(온라인, 더 자연스러운 음질)
+- 엔진: espeak-ng(오프라인) / edge-tts(온라인) / melo-tts(로컬 AI)
 """
 
 import queue
@@ -79,6 +79,8 @@ class Voice:
             self._espeak(text)
         elif self.engine == "edge-tts":
             self._edge_tts(text)
+        elif self.engine == "melo-tts":
+            self._melo_tts(text)
         else:
             print(f"[voice] 알 수 없는 엔진: {self.engine}")
 
@@ -126,8 +128,49 @@ class Voice:
         except Exception as e:
             print(f"[voice] edge-tts 오류: {e}")
 
+    # ── MeloTTS ───────────────────────────────────────────────────
+    def _melo_tts(self, text: str):
+        try:
+            import warnings
+            warnings.filterwarnings('ignore')
+            import tempfile
+            from melo.api import TTS as MeloTTS
+
+            # 모델은 처음 한 번만 로드 (재사용)
+            if not hasattr(self, '_melo_model'):
+                device = getattr(config, 'TTS_MELO_DEVICE', 'cpu')
+                self._melo_model = MeloTTS(language='KR', device=device)
+                self._melo_spk = self._melo_model.hps.data.spk2id['KR']
+
+            speed = getattr(config, 'TTS_MELO_SPEED', 1.1)
+            with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as f:
+                path = f.name
+            self._melo_model.tts_to_file(text, self._melo_spk, path, speed=speed)
+            self._play_audio(path)
+            os.unlink(path)
+
+        except ImportError:
+            print("[voice] melo-tts 없음 → pip install melotts")
+            self.enabled = False
+        except Exception as e:
+            print(f"[voice] melo-tts 오류: {e}")
+
     def _play_audio(self, path: str):
-        """MP3 파일을 재생한다. mpg123 → ffplay 순서로 시도."""
+        """오디오 파일을 재생한다. WSL2 환경에서는 PowerShell을 통해 Windows로 재생."""
+        # WSL2: PowerShell SoundPlayer로 재생 (출력 장치가 Windows에 있음)
+        try:
+            win_path = subprocess.check_output(["wslpath", "-w", path], text=True).strip()
+            result = subprocess.run(
+                ["powershell.exe", "-c",
+                 f"(New-Object Media.SoundPlayer '{win_path}').PlaySync()"],
+                timeout=60,
+            )
+            if result.returncode == 0:
+                return
+        except (FileNotFoundError, subprocess.CalledProcessError):
+            pass
+
+        # 일반 Linux: mpg123 → ffplay 순서로 시도
         for cmd in (["mpg123", "-q", path], ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", path]):
             try:
                 subprocess.run(cmd, timeout=60)

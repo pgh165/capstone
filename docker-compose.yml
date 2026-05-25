@@ -24,50 +24,6 @@ services:
       timeout: 5s
       retries: 5
 
-  ollama:
-    image: ollama/ollama:latest
-    container_name: capstone-ollama
-    restart: unless-stopped
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-    # GPU 사용 시 아래 주석 해제 (Docker Desktop + NVIDIA Container Toolkit 필요)
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: all
-    #           capabilities: [gpu]
-
-  # 기본 실행에서는 제외 (profile 지정 시에만 기동).
-  # WSL 호스트에서 `python main.py`로 직접 실행하는 것이 기본 권장 방식.
-  # Docker 내부에서 돌리려면: `docker compose --profile app-in-docker up -d app`
-  app:
-    build: .
-    container_name: capstone-app
-    restart: unless-stopped
-    profiles:
-      - app-in-docker
-    depends_on:
-      mysql:
-        condition: service_healthy
-      ollama:
-        condition: service_started
-    env_file:
-      - .env
-    environment:
-      DB_HOST: mysql
-      LLM_HOST: http://ollama:11434
-    volumes:
-      - ./models:/app/models
-    group_add:
-      - video
-    devices:
-      - /dev/video0:/dev/video0
-      - /dev/video1:/dev/video1
-
   web:
     build:
       context: ./web
@@ -84,7 +40,8 @@ services:
       DB_PORT: "3306"
     ports:
       - "8000:8000"
+    volumes:
+      - ./data:/app/data:ro
 
 volumes:
   mysql_data:
-  ollama_data:

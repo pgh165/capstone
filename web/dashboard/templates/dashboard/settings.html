@@ -1,0 +1,291 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>설정 — AI 포모도로 타이머</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{% static 'css/style.css' %}">
+    <style>
+        .header-nav { display: flex; gap: 4px; }
+        .header-nav a {
+            color: rgba(255,255,255,0.55);
+            font-size: 0.82rem;
+            text-decoration: none;
+            padding: 5px 12px;
+            border-radius: 6px;
+            transition: background 0.15s, color 0.15s;
+        }
+        .header-nav a:hover { background: rgba(255,255,255,0.1); color: #fff; }
+        .header-nav a.active { background: var(--primary); color: #fff; font-weight: 500; }
+
+        .settings-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 1.25rem;
+            margin-top: 1.5rem;
+        }
+        .setting-card {
+            background: #fff;
+            border-radius: 12px;
+            padding: 1.5rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+        }
+        .setting-card h3 {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 1.25rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid var(--border);
+        }
+        .setting-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.75rem 0;
+            border-bottom: 1px solid #f3f4f6;
+            gap: 1rem;
+        }
+        .setting-row:last-child { border-bottom: none; }
+        .setting-label { font-size: 0.88rem; }
+        .setting-key { font-size: 0.72rem; color: var(--text-secondary); font-family: monospace; }
+        .setting-control { display: flex; align-items: center; gap: 8px; }
+        .setting-input {
+            width: 80px;
+            padding: 5px 8px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-size: 0.88rem;
+            text-align: right;
+        }
+        .setting-input:focus { outline: none; border-color: var(--primary); }
+        .btn-save {
+            padding: 5px 14px;
+            background: var(--primary);
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.82rem;
+            cursor: pointer;
+            transition: opacity 0.15s;
+        }
+        .btn-save:hover { opacity: 0.85; }
+        .btn-save:disabled { opacity: 0.4; cursor: default; }
+        .save-result {
+            font-size: 0.75rem;
+            min-width: 60px;
+            text-align: right;
+        }
+        .save-ok  { color: var(--success); }
+        .save-err { color: var(--danger); }
+
+        .range-hint { font-size: 0.72rem; color: var(--text-secondary); margin-top: 2px; }
+
+        #toast {
+            position: fixed;
+            bottom: 2rem;
+            left: 50%;
+            transform: translateX(-50%) translateY(20px);
+            background: #1a1a2e;
+            color: #fff;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            opacity: 0;
+            transition: opacity 0.3s, transform 0.3s;
+            pointer-events: none;
+            z-index: 999;
+        }
+        #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    </style>
+</head>
+<body>
+    <header style="display:flex;align-items:center;justify-content:space-between;padding:12px 2rem">
+        <div>
+            <h1>AI 개인 맞춤형 포모도로 타이머</h1>
+            <p style="font-size:0.8rem;opacity:0.6;margin-top:2px">감지 설정</p>
+        </div>
+        <nav class="header-nav">
+            <a href="/">📊 대시보드</a>
+            <a href="/realtime/">📡 실시간</a>
+            <a href="/settings/" class="active">⚙ 설정</a>
+        </nav>
+    </header>
+
+    <main>
+        <div id="toast"></div>
+
+        <div class="settings-grid" id="settings-grid">
+            <div class="setting-card">
+                <h3>눈 감김 감지 (EAR)</h3>
+                <div class="setting-row" data-key="ear_threshold" data-min="0.1" data-max="0.5" data-step="0.01">
+                    <div>
+                        <div class="setting-label">EAR 임계값</div>
+                        <div class="setting-key">ear_threshold</div>
+                        <div class="range-hint">범위: 0.10 ~ 0.50 (낮을수록 눈을 더 많이 감아야 감지)</div>
+                    </div>
+                    <div class="setting-control">
+                        <input type="number" class="setting-input" step="0.01" min="0.1" max="0.5">
+                        <button class="btn-save">저장</button>
+                        <span class="save-result"></span>
+                    </div>
+                </div>
+                <div class="setting-row" data-key="ear_duration" data-min="0.5" data-max="10.0" data-step="0.1">
+                    <div>
+                        <div class="setting-label">EAR 지속 시간 (초)</div>
+                        <div class="setting-key">ear_duration</div>
+                        <div class="range-hint">범위: 0.5 ~ 10.0초 (눈 감김 인정 최소 지속 시간)</div>
+                    </div>
+                    <div class="setting-control">
+                        <input type="number" class="setting-input" step="0.1" min="0.5" max="10.0">
+                        <button class="btn-save">저장</button>
+                        <span class="save-result"></span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="setting-card">
+                <h3>하품 감지 (MAR)</h3>
+                <div class="setting-row" data-key="mar_threshold" data-min="0.3" data-max="1.0" data-step="0.01">
+                    <div>
+                        <div class="setting-label">MAR 임계값</div>
+                        <div class="setting-key">mar_threshold</div>
+                        <div class="range-hint">범위: 0.30 ~ 1.00 (낮을수록 입을 덜 벌려도 감지)</div>
+                    </div>
+                    <div class="setting-control">
+                        <input type="number" class="setting-input" step="0.01" min="0.3" max="1.0">
+                        <button class="btn-save">저장</button>
+                        <span class="save-result"></span>
+                    </div>
+                </div>
+                <div class="setting-row" data-key="yawn_count_threshold" data-min="1" data-max="10" data-step="1">
+                    <div>
+                        <div class="setting-label">하품 횟수 임계값</div>
+                        <div class="setting-key">yawn_count_threshold</div>
+                        <div class="range-hint">범위: 1 ~ 10회 (경고까지의 누적 하품 횟수)</div>
+                    </div>
+                    <div class="setting-control">
+                        <input type="number" class="setting-input" step="1" min="1" max="10">
+                        <button class="btn-save">저장</button>
+                        <span class="save-result"></span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="setting-card">
+                <h3>졸음 점수 가중치</h3>
+                <div class="setting-row" data-key="w1_ear" data-min="0.0" data-max="1.0" data-step="0.05">
+                    <div>
+                        <div class="setting-label">EAR 가중치 (w1)</div>
+                        <div class="setting-key">w1_ear</div>
+                        <div class="range-hint">범위: 0.0 ~ 1.0</div>
+                    </div>
+                    <div class="setting-control">
+                        <input type="number" class="setting-input" step="0.05" min="0.0" max="1.0">
+                        <button class="btn-save">저장</button>
+                        <span class="save-result"></span>
+                    </div>
+                </div>
+                <div class="setting-row" data-key="w2_mar" data-min="0.0" data-max="1.0" data-step="0.05">
+                    <div>
+                        <div class="setting-label">MAR 가중치 (w2)</div>
+                        <div class="setting-key">w2_mar</div>
+                        <div class="range-hint">범위: 0.0 ~ 1.0</div>
+                    </div>
+                    <div class="setting-control">
+                        <input type="number" class="setting-input" step="0.05" min="0.0" max="1.0">
+                        <button class="btn-save">저장</button>
+                        <span class="save-result"></span>
+                    </div>
+                </div>
+                <div class="setting-row" data-key="w3_head" data-min="0.0" data-max="1.0" data-step="0.05">
+                    <div>
+                        <div class="setting-label">머리 각도 가중치 (w3)</div>
+                        <div class="setting-key">w3_head</div>
+                        <div class="range-hint">범위: 0.0 ~ 1.0</div>
+                    </div>
+                    <div class="setting-control">
+                        <input type="number" class="setting-input" step="0.05" min="0.0" max="1.0">
+                        <button class="btn-save">저장</button>
+                        <span class="save-result"></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <footer>
+        <p>AI 기반 학습 피로 관리 시스템 &copy; 2026</p>
+    </footer>
+
+    <script>
+    const API = '/api/settings/';
+
+    async function loadSettings() {
+        try {
+            const res = await fetch(API);
+            const json = await res.json();
+            if (!json.success) return;
+            const map = {};
+            for (const s of json.data) map[s.setting_key] = s.setting_value;
+
+            document.querySelectorAll('.setting-row[data-key]').forEach(row => {
+                const key = row.dataset.key;
+                const input = row.querySelector('.setting-input');
+                if (map[key] !== undefined) input.value = map[key];
+            });
+        } catch (e) {
+            console.error('설정 로드 오류:', e);
+        }
+    }
+
+    function showToast(msg) {
+        const t = document.getElementById('toast');
+        t.textContent = msg;
+        t.classList.add('show');
+        setTimeout(() => t.classList.remove('show'), 2500);
+    }
+
+    document.querySelectorAll('.setting-row[data-key]').forEach(row => {
+        const key = row.dataset.key;
+        const input = row.querySelector('.setting-input');
+        const btn = row.querySelector('.btn-save');
+        const result = row.querySelector('.save-result');
+
+        btn.addEventListener('click', async () => {
+            btn.disabled = true;
+            result.textContent = '';
+            try {
+                const res = await fetch(API, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ key, value: parseFloat(input.value) })
+                });
+                const json = await res.json();
+                if (json.success) {
+                    result.textContent = '✓ 저장됨';
+                    result.className = 'save-result save-ok';
+                    showToast(`${key} 저장 완료`);
+                } else {
+                    result.textContent = json.error ?? '오류';
+                    result.className = 'save-result save-err';
+                }
+            } catch (e) {
+                result.textContent = '네트워크 오류';
+                result.className = 'save-result save-err';
+            } finally {
+                btn.disabled = false;
+                setTimeout(() => { result.textContent = ''; }, 3000);
+            }
+        });
+    });
+
+    loadSettings();
+    </script>
+</body>
+</html>

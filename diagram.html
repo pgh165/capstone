@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>시스템 블록도 — AI 포모도로 타이머</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#08090f;--surface:#10131c;--card:#161a28;--border:#1e2235;
+  --text:#dde1f0;--muted:#484d6a;
+  --blue:#5c8dff;--green:#43c464;--yellow:#f5c842;
+  --orange:#ff7043;--red:#f44336;--purple:#b06ef3;--cyan:#26c6da;
+  --teal:#26a69a;
+}
+html,body{width:100%;height:100%;background:var(--bg);color:var(--text);
+  font-family:'Noto Sans KR',sans-serif;overflow:hidden}
+
+/* ── 레이아웃 ── */
+#stage{width:100vw;height:100vh;position:relative}
+svg#diagram{width:100%;height:100%;position:absolute;inset:0}
+
+/* ── 상단 헤더 ── */
+#hdr{position:fixed;top:0;left:0;right:0;padding:14px 28px;
+  display:flex;align-items:center;justify-content:space-between;
+  background:rgba(8,9,15,.85);backdrop-filter:blur(12px);
+  border-bottom:1px solid var(--border);z-index:50}
+#hdr h1{font-size:.95rem;font-weight:700;letter-spacing:.02em}
+#hdr .sub{font-size:.72rem;color:var(--muted);margin-top:2px}
+.hdr-btns{display:flex;gap:8px}
+.hdr-btn{background:var(--card);border:1px solid var(--border);color:var(--muted);
+  padding:5px 14px;border-radius:6px;cursor:pointer;font-size:.78rem;
+  transition:background .15s,color .15s}
+.hdr-btn:hover{background:var(--border);color:var(--text)}
+.hdr-btn.active{background:var(--blue);border-color:var(--blue);color:#fff}
+
+/* ── 범례 ── */
+#legend{position:fixed;bottom:20px;left:20px;
+  background:rgba(16,19,28,.9);backdrop-filter:blur(8px);
+  border:1px solid var(--border);border-radius:10px;padding:12px 16px;
+  font-size:.72rem;z-index:50;display:flex;flex-direction:column;gap:6px}
+.leg-row{display:flex;align-items:center;gap:8px}
+.leg-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.leg-line{width:24px;height:2px;flex-shrink:0}
+
+/* ── 노드 스타일 ── */
+.node-rect{rx:9;ry:9}
+.node-lbl{font-family:'Noto Sans KR',sans-serif;font-size:11.5px;font-weight:500;
+  dominant-baseline:middle;text-anchor:middle;fill:var(--text);pointer-events:none}
+.node-sub{font-family:'JetBrains Mono',monospace;font-size:8.5px;fill:#6b718a;
+  dominant-baseline:middle;text-anchor:middle;pointer-events:none}
+.node-icon{font-size:16px;dominant-baseline:middle;text-anchor:middle;pointer-events:none}
+
+/* 노드 애니메이션 */
+.node-g{opacity:0;transition:opacity .4s ease,transform .4s ease}
+.node-g.visible{opacity:1}
+
+/* ── 화살표 ── */
+.edge{stroke-width:1.8;fill:none;opacity:0;transition:opacity .5s}
+.edge.visible{opacity:1}
+
+/* ── 데이터 흐름 파티클 ── */
+.particle{r:3.5;opacity:0}
+
+/* ── 강조 펄스 ── */
+@keyframes node-pulse{
+  0%{filter:drop-shadow(0 0 0px currentColor)}
+  50%{filter:drop-shadow(0 0 8px currentColor)}
+  100%{filter:drop-shadow(0 0 0px currentColor)}
+}
+.pulsing{animation:node-pulse 2s ease-in-out infinite}
+
+/* 재생 컨트롤 */
+#replay{position:fixed;bottom:20px;right:20px;
+  background:var(--blue);border:none;color:#fff;
+  padding:8px 18px;border-radius:8px;font-size:.8rem;cursor:pointer;z-index:50;
+  font-family:'Noto Sans KR',sans-serif;transition:opacity .2s}
+#replay:hover{opacity:.85}
+</style>
+</head>
+<body>
+<div id="hdr">
+  <div>
+    <div id="hdr"><h1 style="display:inline">🍅 AI 포모도로 타이머 — 시스템 블록도</h1>
+    <span class="sub" style="margin-left:12px">실시간 졸음 감지 → AI 판정 → 동적 포모도로</span></div>
+  </div>
+  <a href="intro.html" class="hdr-btn">← 프레젠테이션</a>
+</div>
+
+<div id="stage">
+<svg id="diagram" viewBox="0 0 1280 720">
+<defs>
+  <!-- 화살표 마커 -->
+  <marker id="arr-blue"  markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 Z" fill="#5c8dff"/></marker>
+  <marker id="arr-green" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 Z" fill="#43c464"/></marker>
+  <marker id="arr-purple"markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 Z" fill="#b06ef3"/></marker>
+  <marker id="arr-yellow"markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 Z" fill="#f5c842"/></marker>
+  <marker id="arr-orange"markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 Z" fill="#ff7043"/></marker>
+  <marker id="arr-cyan"  markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 Z" fill="#26c6da"/></marker>
+  <marker id="arr-teal"  markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 Z" fill="#26a69a"/></marker>
+  <marker id="arr-muted" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 Z" fill="#484d6a"/></marker>
+
+  <!-- 그라디언트 배경들 -->
+  <radialGradient id="grd-blue"  cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#1a2a50"/><stop offset="100%" stop-color="#0d1220"/></radialGradient>
+  <radialGradient id="grd-green" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#1a3320"/><stop offset="100%" stop-color="#0d1810"/></radialGradient>
+  <radialGradient id="grd-purple"cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#2a1a40"/><stop offset="100%" stop-color="#150d20"/></radialGradient>
+  <radialGradient id="grd-yellow"cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#33280a"/><stop offset="100%" stop-color="#1a1408"/></radialGradient>
+  <radialGradient id="grd-orange"cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#33200a"/><stop offset="100%" stop-color="#1a1008"/></radialGradient>
+  <radialGradient id="grd-cyan"  cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#0a2a30"/><stop offset="100%" stop-color="#081518"/></radialGradient>
+  <radialGradient id="grd-teal"  cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#0a2a28"/><stop offset="100%" stop-color="#081515"/></radialGradient>
+</defs>
+
+<!-- ═══════════════════ 그룹 레이블 ═══════════════════ -->
+<!-- 입력 -->
+<text x="120" y="86" fill="#484d6a" font-size="10" font-family="JetBrains Mono" letter-spacing="2">INPUT</text>
+<!-- 생체 분석 -->
+<rect x="310" y="178" width="290" height="164" rx="12" fill="none" stroke="#1e2235" stroke-width="1" stroke-dasharray="4,3"/>
+<text x="325" y="173" fill="#484d6a" font-size="10" font-family="JetBrains Mono" letter-spacing="2">BIOMETRIC ANALYSIS</text>
+<!-- 점수 산출 -->
+<rect x="616" y="178" width="290" height="164" rx="12" fill="none" stroke="#1e2235" stroke-width="1" stroke-dasharray="4,3"/>
+<text x="631" y="173" fill="#484d6a" font-size="10" font-family="JetBrains Mono" letter-spacing="2">DROWSINESS SCORING</text>
+<!-- 출력 -->
+<text x="920" y="86" fill="#484d6a" font-size="10" font-family="JetBrains Mono" letter-spacing="2">OUTPUT</text>
+
+<!-- ═══════════════════ EDGES (화살표) ═══════════════════ -->
+<!-- 입력 체인 -->
+<path id="e-cam-ffm"  class="edge" d="M190,110 L248,110" stroke="#5c8dff" marker-end="url(#arr-blue)"/>
+<path id="e-ffm-mp"   class="edge" d="M330,110 L388,110" stroke="#5c8dff" marker-end="url(#arr-blue)"/>
+<!-- MediaPipe → 두 분석 모듈 -->
+<path id="e-mp-dt"    class="edge" d="M455,143 L455,190" stroke="#43c464" marker-end="url(#arr-green)"/>
+<path id="e-mp-hp"    class="edge" d="M530,143 L560,190" stroke="#43c464" marker-end="url(#arr-green)"/>
+<!-- 분석 → Judge -->
+<path id="e-dt-dj"    class="edge" d="M455,290 L455,330 L635,330 L635,258" stroke="#5c8dff" marker-end="url(#arr-blue)"/>
+<path id="e-hp-dj"    class="edge" d="M560,290 L560,330 L660,330 L660,258" stroke="#5c8dff" marker-end="url(#arr-blue)"/>
+<!-- Judge ↔ AIJudge -->
+<path id="e-dj-ai"    class="edge" d="M762,218 L820,218" stroke="#b06ef3" marker-end="url(#arr-purple)"/>
+<path id="e-ai-dj"    class="edge" d="M820,232 L762,232" stroke="#b06ef3" stroke-dasharray="5,3" marker-end="url(#arr-purple)"/>
+<!-- Judge → FatigueManager -->
+<path id="e-dj-fm"    class="edge" d="M648,260 L540,380" stroke="#f5c842" marker-end="url(#arr-yellow)"/>
+<!-- Judge → AlertController -->
+<path id="e-dj-ac"    class="edge" d="M762,225 L940,420" stroke="#ff7043" marker-end="url(#arr-orange)"/>
+<!-- FatigueManager → Pomodoro -->
+<path id="e-fm-pt"    class="edge" d="M540,460 L640,500" stroke="#43c464" marker-end="url(#arr-green)"/>
+<!-- Judge → Pomodoro -->
+<path id="e-dj-pt"    class="edge" d="M700,260 L700,490" stroke="#5c8dff" stroke-dasharray="5,3" marker-end="url(#arr-blue)"/>
+<!-- Pomodoro → LLMCoach -->
+<path id="e-pt-lc"    class="edge" d="M740,510 L820,510" stroke="#b06ef3" marker-end="url(#arr-purple)"/>
+<!-- Pomodoro → AlertController -->
+<path id="e-pt-ac"    class="edge" d="M740,496 L900,454" stroke="#ff7043" stroke-dasharray="5,3" marker-end="url(#arr-orange)"/>
+<!-- AlertController → Voice/TTS -->
+<path id="e-ac-tts"   class="edge" d="M1020,434 L1100,434" stroke="#ff7043" marker-end="url(#arr-orange)"/>
+<!-- LLMCoach → Voice/TTS -->
+<path id="e-lc-tts"   class="edge" d="M980,510 L1100,460" stroke="#b06ef3" marker-end="url(#arr-purple)"/>
+<!-- FatigueManager → DB -->
+<path id="e-fm-db"    class="edge" d="M490,420 L490,580 L820,580" stroke="#26a69a" marker-end="url(#arr-teal)"/>
+<!-- Judge → DB -->
+<path id="e-dj-db"    class="edge" d="M762,225 L900,225 L900,580 L820,580" stroke="#26a69a" stroke-dasharray="5,3" marker-end="url(#arr-teal)"/>
+<!-- DB → Django -->
+<path id="e-db-web"   class="edge" d="M960,580 L1020,580" stroke="#26c6da" marker-end="url(#arr-cyan)"/>
+
+<!-- ═══════════════════ NODES ═══════════════════ -->
+
+<!-- ① 카메라 -->
+<g id="n-cam" class="node-g" transform="translate(80,80)">
+  <rect class="node-rect" width="110" height="60" fill="url(#grd-blue)" stroke="#5c8dff" stroke-width="1.5"/>
+  <text class="node-icon" x="55" y="20">📷</text>
+  <text class="node-lbl" x="55" y="38">USB 웹캠</text>
+  <text class="node-sub" x="55" y="52">/dev/video0</text>
+</g>
+
+<!-- ② ffmpeg -->
+<g id="n-ffm" class="node-g" transform="translate(248,80)">
+  <rect class="node-rect" width="82" height="60" fill="url(#grd-blue)" stroke="#5c8dff" stroke-width="1.5"/>
+  <text class="node-icon" x="41" y="20">⚙️</text>
+  <text class="node-lbl" x="41" y="38">ffmpeg</text>
+  <text class="node-sub" x="41" y="52">BGR 프레임</text>
+</g>
+
+<!-- ③ MediaPipe -->
+<g id="n-mp" class="node-g" transform="translate(388,80)">
+  <rect class="node-rect" width="134" height="60" fill="url(#grd-blue)" stroke="#5c8dff" stroke-width="1.5"/>
+  <text class="node-icon" x="67" y="20">🧠</text>
+  <text class="node-lbl" x="67" y="38">MediaPipe</text>
+  <text class="node-sub" x="67" y="52">FaceMesh 468pt</text>
+</g>
+
+<!-- ④ DrowsinessTracker -->
+<g id="n-dt" class="node-g" transform="translate(320,190)">
+  <rect class="node-rect" width="135" height="66" fill="url(#grd-green)" stroke="#43c464" stroke-width="1.5"/>
+  <text class="node-lbl" x="67" y="20">DrowsinessTracker</text>
+  <text class="node-sub" x="67" y="35">PERCLOS (60s window)</text>
+  <text class="node-sub" x="67" y="48">MAR (3min window)</text>
+  <text class="node-sub" x="67" y="60" style="fill:#43c464">워밍업 20초</text>
+</g>
+
+<!-- ⑤ HeadPoseEstimator -->
+<g id="n-hp" class="node-g" transform="translate(468,190)">
+  <rect class="node-rect" width="128" height="66" fill="url(#grd-green)" stroke="#43c464" stroke-width="1.5"/>
+  <text class="node-lbl" x="64" y="20">HeadPoseEstimator</text>
+  <text class="node-sub" x="64" y="35">solvePnP</text>
+  <text class="node-sub" x="64" y="48">Pitch / Roll</text>
+  <text class="node-sub" x="64" y="60" style="fill:#ff7043">Yaw 제외</text>
+</g>
+
+<!-- ⑥ DrowsinessJudge (핵심 — 크게) -->
+<g id="n-dj" class="node-g" transform="translate(610,180)">
+  <rect class="node-rect" width="152" height="78" fill="url(#grd-blue)" stroke="#5c8dff" stroke-width="2"/>
+  <text class="node-lbl" x="76" y="18" style="font-size:12.5px;font-weight:700">DrowsinessJudge</text>
+  <text class="node-sub" x="76" y="33">W1=0.45 / W2=0.30 / W3=0.25</text>
+  <text class="node-sub" x="76" y="46">제곱 변환 x²/100</text>
+  <text class="node-sub" x="76" y="58">EMA α = 0.15</text>
+  <text class="node-sub" x="76" y="70" style="fill:#5c8dff">히스테리시스 적용</text>
+</g>
+
+<!-- ⑦ AIJudge -->
+<g id="n-ai" class="node-g" transform="translate(820,190)">
+  <rect class="node-rect" width="130" height="66" fill="url(#grd-purple)" stroke="#b06ef3" stroke-width="1.5"/>
+  <text class="node-icon" x="65" y="16">🤖</text>
+  <text class="node-lbl" x="65" y="32">AIJudge</text>
+  <text class="node-sub" x="65" y="45">gemma4:e4b</text>
+  <text class="node-sub" x="65" y="58">5초 비동기 · ±25 앵커</text>
+</g>
+
+<!-- ⑧ FatigueManager -->
+<g id="n-fm" class="node-g" transform="translate(420,380)">
+  <rect class="node-rect" width="140" height="66" fill="url(#grd-yellow)" stroke="#f5c842" stroke-width="1.5"/>
+  <text class="node-lbl" x="70" y="18">FatigueManager</text>
+  <text class="node-sub" x="70" y="32">연속작업 × 0.40</text>
+  <text class="node-sub" x="70" y="45">졸음빈도 × 0.60</text>
+  <text class="node-sub" x="70" y="58" style="fill:#f5c842">RecoveryProfile</text>
+</g>
+
+<!-- ⑨ AlertController -->
+<g id="n-ac" class="node-g" transform="translate(900,410)">
+  <rect class="node-rect" width="120" height="58" fill="url(#grd-orange)" stroke="#ff7043" stroke-width="1.5"/>
+  <text class="node-icon" x="60" y="16">⚠️</text>
+  <text class="node-lbl" x="60" y="31">AlertController</text>
+  <text class="node-sub" x="60" y="44">L0/1/2/3 단계</text>
+  <text class="node-sub" x="60" y="56" style="fill:#ff7043">히스테리시스</text>
+</g>
+
+<!-- ⑩ PomodoroTimer -->
+<g id="n-pt" class="node-g" transform="translate(640,480)">
+  <rect class="node-rect" width="100" height="58" fill="url(#grd-blue)" stroke="#5c8dff" stroke-width="2"/>
+  <text class="node-icon" x="50" y="16">🍅</text>
+  <text class="node-lbl" x="50" y="32">Pomodoro</text>
+  <text class="node-sub" x="50" y="44">작업 10~40분</text>
+  <text class="node-sub" x="50" y="56" style="fill:#5c8dff">휴식 5~30분</text>
+</g>
+
+<!-- ⑪ LLMCoach -->
+<g id="n-lc" class="node-g" transform="translate(820,480)">
+  <rect class="node-rect" width="130" height="58" fill="url(#grd-purple)" stroke="#b06ef3" stroke-width="1.5"/>
+  <text class="node-icon" x="65" y="16">💬</text>
+  <text class="node-lbl" x="65" y="32">LLMCoach</text>
+  <text class="node-sub" x="65" y="44">gemma4:26b</text>
+  <text class="node-sub" x="65" y="56">5분 쿨다운</text>
+</g>
+
+<!-- ⑫ Voice/TTS -->
+<g id="n-tts" class="node-g" transform="translate(1100,410)">
+  <rect class="node-rect" width="110" height="58" fill="url(#grd-orange)" stroke="#ff7043" stroke-width="1.5"/>
+  <text class="node-icon" x="55" y="16">🔊</text>
+  <text class="node-lbl" x="55" y="32">TTS Voice</text>
+  <text class="node-sub" x="55" y="44">edge-tts</text>
+  <text class="node-sub" x="55" y="56" style="fill:#ff7043">InJoonNeural</text>
+</g>
+
+<!-- ⑬ DBWriter -->
+<g id="n-db" class="node-g" transform="translate(820,550)">
+  <rect class="node-rect" width="140" height="58" fill="url(#grd-teal)" stroke="#26a69a" stroke-width="1.5"/>
+  <text class="node-icon" x="70" y="16">🗄</text>
+  <text class="node-lbl" x="70" y="32">DBWriter</text>
+  <text class="node-sub" x="70" y="44">MySQL 8.0</text>
+  <text class="node-sub" x="70" y="56" style="fill:#26a69a">Docker :3307</text>
+</g>
+
+<!-- ⑭ Django Dashboard -->
+<g id="n-web" class="node-g" transform="translate(1020,550)">
+  <rect class="node-rect" width="148" height="58" fill="url(#grd-cyan)" stroke="#26c6da" stroke-width="1.5"/>
+  <text class="node-icon" x="74" y="16">🌐</text>
+  <text class="node-lbl" x="74" y="32">Django 대시보드</text>
+  <text class="node-sub" x="74" y="44">Docker :8000</text>
+  <text class="node-sub" x="74" y="56" style="fill:#26c6da">/ · /realtime/ · /settings/</text>
+</g>
+
+<!-- ═══════ 파티클 (데이터 흐름) ═══════ -->
+<circle id="p1" class="particle" fill="#5c8dff">
+  <animateMotion dur="1.8s" repeatCount="indefinite" begin="2s">
+    <mpath href="#e-cam-ffm"/>
+  </animateMotion>
+  <animate attributeName="opacity" values="0;1;1;0" dur="1.8s" repeatCount="indefinite" begin="2s"/>
+</circle>
+<circle id="p2" class="particle" fill="#5c8dff">
+  <animateMotion dur="1.8s" repeatCount="indefinite" begin="2.6s">
+    <mpath href="#e-ffm-mp"/>
+  </animateMotion>
+  <animate attributeName="opacity" values="0;1;1;0" dur="1.8s" repeatCount="indefinite" begin="2.6s"/>
+</circle>
+<circle id="p3" class="particle" fill="#43c464">
+  <animateMotion dur="1.6s" repeatCount="indefinite" begin="3.2s">
+    <mpath href="#e-mp-dt"/>
+  </animateMotion>
+  <animate attributeName="opacity" values="0;1;1;0" dur="1.6s" repeatCount="indefinite" begin="3.2s"/>
+</circle>
+<circle id="p4" class="particle" fill="#43c464">
+  <animateMotion dur="1.6s" repeatCount="indefinite" begin="3.5s">
+    <mpath href="#e-mp-hp"/>
+  </animateMotion>
+  <animate attributeName="opacity" values="0;1;1;0" dur="1.6s" repeatCount="indefinite" begin="3.5s"/>
+</circle>
+<circle id="p5" class="particle" fill="#5c8dff">
+  <animateMotion dur="2s" repeatCount="indefinite" begin="4.2s">
+    <mpath href="#e-dt-dj"/>
+  </animateMotion>
+  <animate attributeName="opacity" values="0;1;1;0" dur="2s" repeatCount="indefinite" begin="4.2s"/>
+</circle>
+<circle id="p6" class="particle" fill="#5c8dff">
+  <animateMotion dur="2s" repeatCount="indefinite" begin="4.5s">
+    <mpath href="#e-hp-dj"/>
+  </animateMotion>
+  <animate attributeName="opacity" values="0;1;1;0" dur="2s" repeatCount="indefinite" begin="4.5s"/>
+</circle>
+<circle id="p7" class="particle" fill="#b06ef3">
+  <animateMotion dur="1.5s" repeatCount="indefinite" begin="5.5s">
+    <mpath href="#e-dj-ai"/>
+  </animateMotion>
+  <animate attributeName="opacity" values="0;1;1;0" dur="1.5s" repeatCount="indefinite" begin="5.5s"/>
+</circle>
+<circle id="p8" class="particle" fill="#b06ef3" r="2.5">
+  <animateMotion dur="1.5s" repeatCount="indefinite" begin="6.5s">
+    <mpath href="#e-ai-dj"/>
+  </animateMotion>
+  <animate attributeName="opacity" values="0;1;1;0" dur="1.5s" repeatCount="indefinite" begin="6.5s"/>
+</circle>
+<circle id="p9" class="particle" fill="#f5c842">
+  <animateMotion dur="2.2s" repeatCount="indefinite" begin="6s">
+    <mpath href="#e-dj-fm"/>
+  </animateMotion>
+  <animate attributeName="opacity" values="0;1;1;0" dur="2.2s" repeatCount="indefinite" begin="6s"/>
+</circle>
+<circle id="p10" class="particle" fill="#ff7043">
+  <animateMotion dur="2.5s" repeatCount="indefinite" begin="6.5s">
+    <mpath href="#e-dj-ac"/>
+  </animateMotion>
+  <animate attributeName="opacity" values="0;1;1;0" dur="2.5s" repeatCount="indefinite" begin="6.5s"/>
+</circle>
+<circle id="p11" class="particle" fill="#43c464">
+  <animateMotion dur="1.8s" repeatCount="indefinite" begin="7s">
+    <mpath href="#e-fm-pt"/>
+  </animateMotion>
+  <animate attributeName="opacity" values="0;1;1;0" dur="1.8s" repeatCount="indefinite" begin="7s"/>
+</circle>
+<circle id="p12" class="particle" fill="#b06ef3">
+  <animateMotion dur="1.6s" repeatCount="indefinite" begin="7.8s">
+    <mpath href="#e-pt-lc"/>
+  </animateMotion>
+  <animate attributeName="opacity" values="0;1;1;0" dur="1.6s" repeatCount="indefinite" begin="7.8s"/>
+</circle>
+<circle id="p13" class="particle" fill="#ff7043">
+  <animateMotion dur="1.6s" repeatCount="indefinite" begin="8.2s">
+    <mpath href="#e-ac-tts"/>
+  </animateMotion>
+  <animate attributeName="opacity" values="0;1;1;0" dur="1.6s" repeatCount="indefinite" begin="8.2s"/>
+</circle>
+<circle id="p14" class="particle" fill="#b06ef3">
+  <animateMotion dur="2s" repeatCount="indefinite" begin="8.8s">
+    <mpath href="#e-lc-tts"/>
+  </animateMotion>
+  <animate attributeName="opacity" values="0;1;1;0" dur="2s" repeatCount="indefinite" begin="8.8s"/>
+</circle>
+<circle id="p15" class="particle" fill="#26a69a" r="2.5">
+  <animateMotion dur="3s" repeatCount="indefinite" begin="7.5s">
+    <mpath href="#e-fm-db"/>
+  </animateMotion>
+  <animate attributeName="opacity" values="0;1;1;0" dur="3s" repeatCount="indefinite" begin="7.5s"/>
+</circle>
+<circle id="p16" class="particle" fill="#26c6da">
+  <animateMotion dur="1.8s" repeatCount="indefinite" begin="10s">
+    <mpath href="#e-db-web"/>
+  </animateMotion>
+  <animate attributeName="opacity" values="0;1;1;0" dur="1.8s" repeatCount="indefinite" begin="10s"/>
+</circle>
+
+</svg>
+</div>
+
+<!-- 범례 -->
+<div id="legend">
+  <div class="leg-row"><div class="leg-line" style="background:#5c8dff"></div><span>입력 / 점수 산출</span></div>
+  <div class="leg-row"><div class="leg-line" style="background:#43c464"></div><span>생체 신호 분석</span></div>
+  <div class="leg-row"><div class="leg-line" style="background:#b06ef3"></div><span>AI 판정 / LLM 코칭</span></div>
+  <div class="leg-row"><div class="leg-line" style="background:#f5c842"></div><span>피로도 관리</span></div>
+  <div class="leg-row"><div class="leg-line" style="background:#ff7043"></div><span>경고 / TTS</span></div>
+  <div class="leg-row"><div class="leg-line" style="background:#26a69a"></div><span>DB 저장</span></div>
+  <div class="leg-row"><div class="leg-line" style="background:#26c6da"></div><span>웹 대시보드</span></div>
+  <div class="leg-row"><div class="leg-line" style="background:#484d6a;border-top:2px dashed #484d6a;height:0"></div><span style="margin-left:4px">보조 흐름</span></div>
+</div>
+
+<button id="replay">↺ 다시 재생</button>
+
+<script>
+// 노드 등장 순서 및 딜레이
+const sequence = [
+  {id:'n-cam',  delay:200},
+  {id:'n-ffm',  delay:500},
+  {id:'n-mp',   delay:800},
+  {id:'n-dt',   delay:1200},
+  {id:'n-hp',   delay:1500},
+  {id:'n-dj',   delay:1900},
+  {id:'n-ai',   delay:2400},
+  {id:'n-fm',   delay:2900},
+  {id:'n-ac',   delay:3300},
+  {id:'n-pt',   delay:3700},
+  {id:'n-lc',   delay:4100},
+  {id:'n-tts',  delay:4500},
+  {id:'n-db',   delay:4900},
+  {id:'n-web',  delay:5300},
+];
+
+// 엣지 등장 순서
+const edgeSeq = [
+  {id:'e-cam-ffm', delay:350},
+  {id:'e-ffm-mp',  delay:650},
+  {id:'e-mp-dt',   delay:1050},
+  {id:'e-mp-hp',   delay:1300},
+  {id:'e-dt-dj',   delay:1700},
+  {id:'e-hp-dj',   delay:1800},
+  {id:'e-dj-ai',   delay:2200},
+  {id:'e-ai-dj',   delay:2500},
+  {id:'e-dj-fm',   delay:2700},
+  {id:'e-dj-ac',   delay:3100},
+  {id:'e-fm-pt',   delay:3500},
+  {id:'e-dj-pt',   delay:3600},
+  {id:'e-pt-lc',   delay:3900},
+  {id:'e-pt-ac',   delay:4000},
+  {id:'e-ac-tts',  delay:4300},
+  {id:'e-lc-tts',  delay:4700},
+  {id:'e-fm-db',   delay:4750},
+  {id:'e-dj-db',   delay:4800},
+  {id:'e-db-web',  delay:5100},
+];
+
+let timers = [];
+
+function clearAll(){
+  timers.forEach(clearTimeout);
+  timers = [];
+  document.querySelectorAll('.node-g').forEach(el=>{
+    el.classList.remove('visible','pulsing');
+  });
+  document.querySelectorAll('.edge').forEach(el=>{
+    el.classList.remove('visible');
+  });
+}
+
+function play(){
+  clearAll();
+  sequence.forEach(({id,delay})=>{
+    const t = setTimeout(()=>{
+      const el = document.getElementById(id);
+      if(el) el.classList.add('visible');
+    }, delay);
+    timers.push(t);
+  });
+  edgeSeq.forEach(({id,delay})=>{
+    const t = setTimeout(()=>{
+      const el = document.getElementById(id);
+      if(el) el.classList.add('visible');
+    }, delay);
+    timers.push(t);
+  });
+  // 핵심 노드 펄스
+  const t = setTimeout(()=>{
+    document.getElementById('n-dj').classList.add('pulsing');
+    document.getElementById('n-pt').classList.add('pulsing');
+  }, 5600);
+  timers.push(t);
+}
+
+document.getElementById('replay').addEventListener('click', play);
+
+// 노드 클릭 정보
+const nodeInfo = {
+  'n-cam':  '📷 USB 웹캠 — /dev/video0 · usbipd로 WSL2에 연결',
+  'n-ffm':  '⚙ ffmpeg subprocess — BGR 프레임 캡처, 해상도/FPS 조정',
+  'n-mp':   '🧠 MediaPipe FaceMesh — 468개 3D 랜드마크 실시간 추출',
+  'n-dt':   '👁 DrowsinessTracker — PERCLOS(60초 슬라이딩), MAR(3분 슬라이딩), 워밍업 20초',
+  'n-hp':   '🙆 HeadPoseEstimator — solvePnP로 Pitch/Roll 추정. Yaw는 졸음 징후 아님 → 제외',
+  'n-dj':   '📊 DrowsinessJudge — W1=0.45/W2=0.30/W3=0.25 가중합 → x²/100 제곱 변환 → EMA α=0.15 스무딩',
+  'n-ai':   '🤖 AIJudge — gemma4:e4b, 5초 비동기. rule_score 앵커(±25). 편차>30 → 중간값',
+  'n-fm':   '📈 FatigueManager — 피로도=연속작업×0.40+졸음빈도×0.60. RecoveryProfile로 개인화 추천',
+  'n-ac':   '⚠ AlertController — L0~L3. 히스테리시스: 상승 즉시, 하강은 임계값 통과 후',
+  'n-pt':   '🍅 PomodoroTimer — AI가 피로도+졸음으로 작업시간 10~40분, 휴식 5~30분 동적 결정',
+  'n-lc':   '💬 LLMCoach — gemma4:26b, 5분 쿨다운. 개인 피로 원인 분석 후 코칭 메시지',
+  'n-tts':  '🔊 TTS Voice — edge-tts ko-KR-InJoonNeural. 경보·코칭 음성 발화',
+  'n-db':   '🗄 DBWriter — MySQL 8.0 (Docker :3307). detection_logs/fatigue_logs/recovery_actions',
+  'n-web':  '🌐 Django 대시보드 (Docker :8000) — / · /realtime/ · /settings/',
+};
+
+// 툴팁
+const tooltip = document.createElement('div');
+tooltip.style.cssText = 'position:fixed;background:rgba(16,19,28,.95);border:1px solid #1e2235;'+
+  'color:#dde1f0;padding:10px 14px;border-radius:8px;font-size:.78rem;max-width:320px;'+
+  'line-height:1.6;pointer-events:none;z-index:200;display:none;font-family:Noto Sans KR,sans-serif';
+document.body.appendChild(tooltip);
+
+document.querySelectorAll('.node-g').forEach(el=>{
+  el.style.cursor='pointer';
+  el.addEventListener('mouseenter', e=>{
+    const info = nodeInfo[el.id];
+    if(!info) return;
+    tooltip.textContent = info;
+    tooltip.style.display = 'block';
+  });
+  el.addEventListener('mousemove', e=>{
+    tooltip.style.left = (e.clientX+14)+'px';
+    tooltip.style.top  = (e.clientY-10)+'px';
+  });
+  el.addEventListener('mouseleave', ()=>{ tooltip.style.display='none'; });
+});
+
+// 자동 시작
+play();
+</script>
+</body>
+</html>

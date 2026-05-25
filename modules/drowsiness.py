@@ -97,19 +97,22 @@ def calculate_mar(mouth_landmarks):
 class DrowsinessTracker:
     """졸음 상태 추적 클래스"""
 
-    # EAR 점수 보간 구간: (눈감김 지속시간 초, 점수)
-    _EAR_BREAKPOINTS = [
-        (0.0, 0), (0.3, 10), (0.5, 20), (1.0, 40),
-        (2.0, 60), (3.0, 80), (4.0, 100),
+    # PERCLOS 점수 보간 구간: (60초 눈 감김 비율 %, 점수)
+    # 정상 깜빡임(~6%) 오탐 방지를 위해 10% 이하는 0점
+    _PERCLOS_BREAKPOINTS = [
+        (0, 0), (10, 0), (20, 20), (30, 45),
+        (45, 70), (55, 85), (65, 100),
     ]
 
     # MAR 점수 보간 구간: (하품 횟수, 점수)
     _MAR_BREAKPOINTS = [
-        (0, 0), (1, 15), (2, 30), (3, 50), (5, 80), (7, 100),
+        (0, 0), (1, 5), (2, 20), (3, 40), (5, 70), (7, 100),
     ]
 
     # PERCLOS 윈도우 (초)
     _PERCLOS_WINDOW = 60.0
+    # PERCLOS 최소 유효 윈도우: 이 시간 미만이면 데이터 부족으로 0점 처리
+    _PERCLOS_MIN_WINDOW = 20.0
 
     def __init__(self):
         # 눈 감김 추적
@@ -143,13 +146,17 @@ class DrowsinessTracker:
             self._eye_states.popleft()
 
         # PERCLOS 계산 (윈도우 내 눈 감김 시간 비율)
+        # 최소 10초 이상 데이터가 쌓여야 의미 있는 값으로 인정
         if len(self._eye_states) >= 2:
             closed_time = 0.0
             for i in range(1, len(self._eye_states)):
                 if self._eye_states[i][1]:
                     closed_time += self._eye_states[i][0] - self._eye_states[i - 1][0]
             total_time = self._eye_states[-1][0] - self._eye_states[0][0]
-            self.perclos = (closed_time / total_time * 100.0) if total_time > 0 else 0.0
+            if total_time >= self._PERCLOS_MIN_WINDOW:
+                self.perclos = closed_time / total_time * 100.0
+            else:
+                self.perclos = 0.0
         else:
             self.perclos = 0.0
 
@@ -186,23 +193,8 @@ class DrowsinessTracker:
         self._update_mar_score()
 
     def _update_ear_score(self):
-        """EAR 기반 졸음 점수 산출 (연속 보간 + PERCLOS 가산)"""
-        if not self.eye_closed:
-            # 눈이 떠있어도 최근 PERCLOS 비율 반영 (15% 이상이면 졸음 전조)
-            self.ear_score = _lerp_score(
-                self.perclos, [(0, 0), (10, 5), (15, 15), (25, 30), (40, 50)]
-            )
-            return
-
-        # 눈 감김 지속 시간 기반 점수 (선형 보간)
-        duration_score = _lerp_score(self.eye_close_duration, self._EAR_BREAKPOINTS)
-
-        # PERCLOS 보너스 (최근 1분간 눈 감김이 잦으면 가산)
-        perclos_bonus = _lerp_score(
-            self.perclos, [(0, 0), (15, 5), (30, 15), (50, 25)]
-        )
-
-        self.ear_score = min(100, duration_score + perclos_bonus)
+        """PERCLOS 기반 졸음 점수 산출 (최근 60초 눈 감김 비율)"""
+        self.ear_score = _lerp_score(self.perclos, self._PERCLOS_BREAKPOINTS)
 
     def _update_mar_score(self):
         """MAR 기반 졸음 점수 산출 (연속 보간)"""
@@ -224,6 +216,10 @@ class DrowsinessTracker:
     def get_perclos(self):
         """최근 60초간 PERCLOS 값 (%) 반환"""
         return round(self.perclos, 1)
+
+    def get_ear_closed_seconds(self):
+        """현재 연속 눈 감김 지속 시간(초)"""
+        return round(self.eye_close_duration, 2)
 
     def get_yawn_count(self):
         """3분 내 하품 횟수"""

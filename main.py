@@ -1,5 +1,5 @@
 """
-AIoT 기반 졸음 및 집중력 저하 방지 시스템
+AI 기반 학습 피로 관리 시스템
 메인 실행 파일
 
 실행: python main.py
@@ -45,7 +45,6 @@ from modules.camera import Camera
 from modules.face_detector import FaceDetector
 from modules.drowsiness import calculate_ear, calculate_mar, DrowsinessTracker
 from modules.head_pose import HeadPoseEstimator
-from modules.env_sensor import EnvironmentSensor
 from modules.judge import DrowsinessJudge
 from modules.fatigue_manager import FatigueManager
 from modules.recovery_guide import RecoveryGuide
@@ -53,6 +52,8 @@ from modules.llm_coach import LLMCoach
 from modules.alert import AlertController
 from modules.db_writer import DBWriter
 from modules.voice import Voice
+from modules.ai_judge import AIJudge
+from modules.pomodoro import PomodoroTimer
 
 
 def draw_info(frame, data):
@@ -71,14 +72,22 @@ def draw_info(frame, data):
     font = cv2.FONT_HERSHEY_SIMPLEX
     scale = 0.5
 
+    pomo = data.get('pomo_status', {})
+    pomo_state = pomo.get('state', 'idle')
+    if pomo_state == 'working':
+        pomo_str = (f"Pomo: Work {pomo.get('elapsed_min',0):.0f}/"
+                    f"{pomo.get('planned_min',0)}min (C{pomo.get('cycle',1)})")
+    elif pomo_state == 'break':
+        pomo_str = (f"Pomo: BREAK {pomo.get('remaining_min',0):.0f}min left")
+    else:
+        pomo_str = "Pomo: --"
+
     lines = [
         f"EAR: {data.get('ear', 0):.3f}  MAR: {data.get('mar', 0):.3f}",
         f"Head: P={data.get('pitch', 0):.1f} Y={data.get('yaw', 0):.1f}",
         f"Drowsiness: {data.get('drowsiness_score', 0)} (L{data.get('alert_level', 0)})",
         f"Fatigue: {data.get('fatigue_score', 0)} ({data.get('fatigue_level', '-')})",
-        f"CO2: {data.get('co2', 0)}ppm  T: {data.get('temp', 0)}C  H: {data.get('humid', 0)}%",
-        f"Env Score: {data.get('env_score', 0)}",
-        f"Work: {data.get('work_min', 0)}min  Drowsy: {data.get('drowsy_count', 0)}",
+        pomo_str,
     ]
 
     for line in lines:
@@ -101,8 +110,8 @@ def draw_info(frame, data):
 
 def main():
     print("=" * 60)
-    print("  AIoT 기반 졸음 및 집중력 저하 방지 시스템")
-    print(f"  모드: {'데스크탑 (웹캠)' if config.IS_DESKTOP else '라즈베리파이'}")
+    print("  AI 개인 맞춤형 포모도로 타이머")
+    print(f"  모드: WSL 웹캠 직접 캡처")
     print("=" * 60)
 
     # 모듈 초기화
@@ -110,14 +119,15 @@ def main():
     face_detector = FaceDetector()
     drowsiness_tracker = DrowsinessTracker()
     head_pose_estimator = HeadPoseEstimator()
-    env_sensor = EnvironmentSensor()
     judge = DrowsinessJudge()
     fatigue_manager = FatigueManager()
     recovery_guide = RecoveryGuide()
     voice = Voice()
     llm_coach = LLMCoach()
+    ai_judge = AIJudge()
     alert_controller = AlertController(voice=voice)
     db_writer = DBWriter()
+    pomodoro = PomodoroTimer()
 
     print("[main] 모든 모듈 초기화 완료")
 
@@ -132,8 +142,12 @@ def main():
     last_db_save = time.time()
     last_fatigue_log = time.time()
     last_profile_refresh = time.time()
-    last_guide_time = 0.0
+    last_status_write = time.time()
     frame_count = 0
+    drowsiness_score = 0.0   # 첫 프레임 rule_score 참조 전 초기화
+
+    # 실시간 상태 공유 파일 경로 (Docker 볼륨 마운트 경로와 일치)
+    STATUS_FILE = os.path.join(config.BASE_DIR, "data", "realtime_status.json")
 
     try:
         while True:
@@ -159,7 +173,8 @@ def main():
             landmarks = face_detector.detect(frame)
 
             if landmarks is None:
-                # 얼굴 미검출
+                # 얼굴 미검출 — AI 판정 결과도 무효화
+                ai_judge.reset()
                 if face_detector.is_no_face_alert():
                     alert_controller.set_alert_level(3)
             else:
@@ -187,42 +202,86 @@ def main():
                 # 랜드마크 그리기 (디버깅용)
                 frame = face_detector.draw_landmarks(frame, landmarks)
 
-            # 6. 환경 센서 읽기
-            env_data = env_sensor.read_all()
-            env_score = judge.calculate_env_score(
-                env_data['co2'],
-                env_data['temperature'],
-                env_data['humidity']
-            )
+                # AI 판정 요청 (비동기, 5초 주기) — 규칙 기반 점수를 앵커로 전달
+                ai_judge.request({
+                    "ear": ear_value,
+                    "mar": mar_value,
+                    "pitch": pitch,
+                    "yaw": yaw,
+                    "ear_closed_sec": drowsiness_tracker.get_ear_closed_seconds(),
+                    "yawn_count": drowsiness_tracker.get_yawn_count(),
+                }, rule_score=drowsiness_score)
 
-            # 7. 종합 졸음 점수 산출
+            # 6. 종합 졸음 점수 산출
             drowsiness_score = judge.calculate_drowsiness_score(
-                ear_score, mar_score, head_score, env_score
+                ear_score, mar_score, head_score
             )
             alert_level = judge.get_alert_level(drowsiness_score)
 
-            # 얼굴 미검출 경고가 아닌 경우에만 졸음 기반 경고
+            # 7-1. AI 판정 결과 반영 (편차 30점 초과 시 절반만 반영)
+            ai_result = ai_judge.latest()
+            if ai_result:
+                ai_score = float(ai_result["drowsiness"])
+                if abs(ai_score - drowsiness_score) > 30:
+                    # 규칙 기반과 너무 큰 차이 → 중간값으로 완화
+                    drowsiness_score = round((drowsiness_score + ai_score) / 2, 1)
+                else:
+                    drowsiness_score = ai_score
+                alert_level = judge.get_alert_level(drowsiness_score)
+
+            # 얼굴 미검출 경고가 아닌 경우에만 졸음 기반 경고 (히스테리시스 적용)
             if landmarks is not None or not face_detector.is_no_face_alert():
-                alert_controller.set_alert_level(alert_level)
+                alert_controller.update(drowsiness_score, alert_level)
 
             # 8. 피로도 업데이트
-            fatigue_manager.update(drowsiness_score, alert_level, env_data)
+            fatigue_manager.update(drowsiness_score, alert_level)
             fatigue_status = fatigue_manager.get_status()
 
-            # 9. 피로 해소 가이드 제공 (원인 기반 맞춤 가이드)
             fatigue_level = fatigue_manager.get_fatigue_level()
-            if fatigue_level != "good" and not fatigue_manager.has_active_recovery:
-                guide_types = fatigue_manager.get_recommended_guide()
-                if guide_types:
-                    # 5분에 한 번만 가이드 출력 (콘솔 스팸 방지)
-                    if current_time - last_guide_time > 300:
-                        dominant_cause = fatigue_manager.get_dominant_cause()
-                        recovery_guide.display_guides_for_level(
-                            fatigue_level, guide_types, dominant_cause,
-                        )
-                        last_guide_time = current_time
 
-                        # LLM 개인화 코칭 비동기 요청
+            # 9. 포모도로 타이머 (AI 개인 맞춤형)
+            # ── 최초 얼굴 감지 시 타이머 자동 시작
+            if landmarks is not None and pomodoro.state == pomodoro.IDLE:
+                start_ev = pomodoro.start(
+                    fatigue_status['fatigue_score'], drowsiness_score
+                )
+                voice.speak(
+                    f"포모도로 시작. {start_ev['planned_min']}분 집중해볼까요?"
+                )
+
+            # ── 작업 중: 휴식 필요 여부 확인
+            if pomodoro.state == pomodoro.WORKING:
+                pomo_ev = pomodoro.update(
+                    fatigue_status['fatigue_score'], drowsiness_score, alert_level
+                )
+                if pomo_ev and pomo_ev['event'] == 'break_needed':
+                    if not fatigue_manager.has_active_recovery:
+                        dominant_cause = fatigue_manager.get_dominant_cause()
+                        guide_level = fatigue_level if fatigue_level != "good" else "caution"
+                        guide_types = (fatigue_manager.get_recommended_guide()
+                                       or ["eye_rest"])
+
+                        # 가이드 콘솔 출력
+                        recovery_guide.display_guides_for_level(
+                            guide_level, guide_types, dominant_cause,
+                        )
+
+                        # 포모도로 휴식 전환
+                        break_ev = pomodoro.start_break(
+                            fatigue_level,
+                            fatigue_status['fatigue_score'],
+                            drowsiness_score,
+                        )
+
+                        # TTS 안내
+                        forced = pomo_ev.get('forced', False)
+                        tts_msg = (
+                            f"{'위험 수준! ' if forced else ''}"
+                            f"휴식 시간입니다. {break_ev['break_min']}분 쉬어갑니다."
+                        )
+                        voice.speak(tts_msg)
+
+                        # LLM 개인화 코칭 요청
                         profile_stats = (
                             fatigue_manager.recovery_profile.get_stats_summary()
                         )
@@ -237,17 +296,12 @@ def main():
                             "guide_types": guide_types,
                             "work_min": fatigue_status['continuous_work_min'],
                             "drowsy_count": fatigue_status['drowsy_count_30min'],
-                            "env": {
-                                "co2": env_data['co2'],
-                                "temp": env_data['temperature'],
-                                "humid": env_data['humidity'],
-                            },
                             "recovery_history_summary": history_summary,
                         })
 
-                        # 회복 세션 시작 (가이드 중 최대 소요 시간 사용)
+                        # 회복 세션 시작 (효과 검증용)
                         guides_data = recovery_guide.get_guides_for_level(
-                            fatigue_level, guide_types,
+                            guide_level, guide_types,
                         )
                         max_duration = max(
                             (g.get("duration_sec", 60) for g in guides_data),
@@ -257,37 +311,72 @@ def main():
                             guide_types, drowsiness_score, max_duration,
                         )
 
-            # 9-1. 회복 세션 진행 및 효과 검증
-            if fatigue_manager.has_active_recovery:
-                recovery_result = fatigue_manager.update_recovery_session(
-                    drowsiness_score, ear_value, mar_value,
-                    face_detected=(landmarks is not None),
-                )
-                if recovery_result and "effective" in recovery_result:
-                    # 회복 결과를 DB에 기록
-                    db_writer.save_recovery_action({
-                        "guide_type": ",".join(recovery_result["guide_types"]),
-                        "dominant_cause": recovery_result.get("dominant_cause", ""),
-                        "fatigue_before": int(recovery_result["fatigue_before"]),
-                        "fatigue_after": int(recovery_result["fatigue_after"]),
-                        "drowsiness_before": int(recovery_result["drowsiness_before"]),
-                        "drowsiness_after": int(recovery_result["drowsiness_after"]),
-                        "duration_sec": recovery_result["duration_sec"],
-                        "effective": recovery_result["effective"],
-                    })
-                    # 개인화 프로필 갱신
-                    history = db_writer.get_recovery_history()
-                    if history:
-                        fatigue_manager.load_recovery_profile(history)
-                    if not recovery_result["effective"]:
-                        print("[recovery] 추가 휴식이 필요합니다. "
-                              "더 강한 회복 조치를 권장합니다.")
+            # ── 휴식 중: 회복 세션 진행 + 완료 감지
+            elif pomodoro.state == pomodoro.BREAK:
+                # 회복 세션 효과 검증
+                if fatigue_manager.has_active_recovery:
+                    recovery_result = fatigue_manager.update_recovery_session(
+                        drowsiness_score, ear_value, mar_value,
+                        face_detected=(landmarks is not None),
+                    )
+                    if recovery_result and "effective" in recovery_result:
+                        db_writer.save_recovery_action({
+                            "guide_type": ",".join(recovery_result["guide_types"]),
+                            "dominant_cause": recovery_result.get("dominant_cause", ""),
+                            "fatigue_before": int(recovery_result["fatigue_before"]),
+                            "fatigue_after": int(recovery_result["fatigue_after"]),
+                            "drowsiness_before": int(recovery_result["drowsiness_before"]),
+                            "drowsiness_after": int(recovery_result["drowsiness_after"]),
+                            "duration_sec": recovery_result["duration_sec"],
+                            "effective": recovery_result["effective"],
+                        })
+                        history = db_writer.get_recovery_history()
+                        if history:
+                            fatigue_manager.load_recovery_profile(history)
+                        if not recovery_result["effective"]:
+                            print("[recovery] 추가 휴식이 필요합니다.")
 
-            # 9-2. LLM 코칭 결과 폴링 (비동기 응답 도착 시 출력)
+                # 휴식 완료 → 다음 작업 사이클 시작
+                done_ev = pomodoro.update_break()
+                if done_ev:
+                    next_ev = pomodoro.start(
+                        fatigue_status['fatigue_score'], drowsiness_score
+                    )
+                    voice.speak(
+                        f"휴식 끝! {done_ev['cycle']}번째 사이클 완료. "
+                        f"다음 작업은 {next_ev['planned_min']}분입니다."
+                    )
+
+            # 9-1. LLM 코칭 결과 폴링 (비동기 응답 도착 시 출력)
             llm_result = llm_coach.poll_result()
             if llm_result:
                 llm_coach.display(llm_result)
                 voice.speak(llm_result.get("text", ""))
+
+            # 9-2. 실시간 상태 파일 갱신 (1초마다)
+            if current_time - last_status_write >= 1.0:
+                try:
+                    import json as _json
+                    _status = {
+                        "ts": current_time,
+                        "drowsiness_score": int(drowsiness_score),
+                        "alert_level": alert_level,
+                        "fatigue_score": int(fatigue_status["fatigue_score"]),
+                        "fatigue_level": fatigue_status["fatigue_level"],
+                        "perclos": round(drowsiness_tracker.get_perclos(), 1),
+                        "yawn_count": drowsiness_tracker.get_yawn_count(),
+                        "ear": round(ear_value, 3),
+                        "mar": round(mar_value, 3),
+                        "pitch": round(pitch, 1),
+                        "yaw": round(yaw, 1),
+                        "face_detected": landmarks is not None,
+                        "pomo": pomodoro.get_status(),
+                    }
+                    with open(STATUS_FILE, "w") as _f:
+                        _json.dump(_status, _f)
+                    last_status_write = current_time
+                except Exception:
+                    pass
 
             # 10. DB 저장 (주기적)
             if current_time - last_db_save >= config.DB_SAVE_INTERVAL:
@@ -298,10 +387,6 @@ def main():
                     "head_yaw": round(yaw, 2),
                     "drowsiness_score": int(drowsiness_score),
                     "alert_level": alert_level,
-                    "co2_ppm": env_data['co2'],
-                    "temperature": env_data['temperature'],
-                    "humidity": env_data['humidity'],
-                    "env_score": int(env_score),
                 }
                 db_writer.save_detection(detection_data)
 
@@ -311,7 +396,6 @@ def main():
                         "fatigue_score": int(fatigue_status['fatigue_score']),
                         "continuous_work_min": int(fatigue_status['continuous_work_min']),
                         "drowsy_count_30min": fatigue_status['drowsy_count_30min'],
-                        "env_stress_score": int(fatigue_status['env_stress_score']),
                         "fatigue_level": fatigue_status['fatigue_level'],
                     }
                     db_writer.save_fatigue(fatigue_data)
@@ -320,6 +404,7 @@ def main():
                 last_db_save = current_time
 
             # 11. 화면 표시
+            pomo_status = pomodoro.get_status()
             display_data = {
                 'ear': ear_value,
                 'mar': mar_value,
@@ -329,23 +414,26 @@ def main():
                 'alert_level': alert_level,
                 'fatigue_score': int(fatigue_status['fatigue_score']),
                 'fatigue_level': fatigue_status['fatigue_level'],
-                'co2': env_data['co2'],
-                'temp': env_data['temperature'],
-                'humid': env_data['humidity'],
-                'env_score': int(env_score),
-                'work_min': int(fatigue_status['continuous_work_min']),
-                'drowsy_count': fatigue_status['drowsy_count_30min'],
+                'pomo_status': pomo_status,
             }
 
             if HEADLESS:
                 # 헤드리스: 콘솔에 상태 출력 (5초마다)
                 if frame_count % (config.CAMERA_FPS * 5) == 0:
                     level_names = {0: '정상', 1: '주의', 2: '경고', 3: '위험'}
+                    pomo_st = pomo_status.get('state', 'idle')
+                    if pomo_st == 'working':
+                        pomo_info = (f"작업 {pomo_status.get('elapsed_min',0):.0f}/"
+                                     f"{pomo_status.get('planned_min',0)}분"
+                                     f"(C{pomo_status.get('cycle',1)})")
+                    elif pomo_st == 'break':
+                        pomo_info = f"휴식 {pomo_status.get('remaining_min',0):.0f}분 남음"
+                    else:
+                        pomo_info = "대기"
                     print(f"[{time.strftime('%H:%M:%S')}] "
-                          f"EAR={ear_value:.3f} MAR={mar_value:.3f} "
                           f"졸음={int(drowsiness_score)}(L{alert_level}-{level_names.get(alert_level,'?')}) "
                           f"피로={int(fatigue_status['fatigue_score'])}({fatigue_status['fatigue_level']}) "
-                          f"CO2={env_data['co2']}ppm T={env_data['temperature']}C")
+                          f"🍅{pomo_info}")
                 # stdin에서 q 입력 감지
                 if _stdin_has_quit():
                     print("\n[main] 종료 요청 (stdin)")
@@ -366,12 +454,18 @@ def main():
         print("\n[main] Ctrl+C 감지 - 종료")
 
     finally:
+        # 실시간 상태 파일 삭제 (대시보드에 "연결 끊김" 표시)
+        try:
+            if os.path.exists(STATUS_FILE):
+                os.remove(STATUS_FILE)
+        except Exception:
+            pass
+
         # 리소스 해제
         print("[main] 리소스 해제 중...")
         voice.stop()
         camera.release()
         face_detector.release()
-        env_sensor.cleanup()
         alert_controller.cleanup()
         db_writer.close()
         if not HEADLESS:

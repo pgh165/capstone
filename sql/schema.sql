@@ -1,4 +1,4 @@
--- AIoT 기반 졸음 및 집중력 저하 방지 시스템 - 데이터베이스 스키마
+-- AI 개인 맞춤형 포모도로 타이머 - 데이터베이스 스키마
 -- MySQL / MariaDB
 
 CREATE DATABASE IF NOT EXISTS jihodb
@@ -17,10 +17,6 @@ CREATE TABLE IF NOT EXISTS detection_logs (
     head_yaw FLOAT,
     drowsiness_score INT,
     alert_level INT,
-    co2_ppm INT,
-    temperature FLOAT,
-    humidity FLOAT,
-    env_score INT,
     INDEX idx_detected_at (detected_at),
     INDEX idx_alert_level (alert_level)
 );
@@ -32,7 +28,6 @@ CREATE TABLE IF NOT EXISTS fatigue_logs (
     fatigue_score INT,
     continuous_work_min INT,
     drowsy_count_30min INT,
-    env_stress_score INT,
     fatigue_level VARCHAR(20),
     INDEX idx_logged_at (logged_at)
 );
@@ -76,8 +71,6 @@ CREATE TABLE IF NOT EXISTS daily_summary (
     alert_count_level2 INT DEFAULT 0,
     alert_count_level3 INT DEFAULT 0,
     peak_drowsy_time TIME,
-    avg_co2 INT DEFAULT 0,
-    avg_temperature FLOAT DEFAULT 0,
     INDEX idx_summary_date (summary_date)
 );
 
@@ -87,10 +80,7 @@ INSERT INTO settings (setting_key, setting_value, description) VALUES
 ('mar_threshold', '0.6', 'MAR 임계값 (이상이면 하품)'),
 ('ear_duration', '2.0', '눈 감김 지속시간 임계값 (초)'),
 ('yawn_count_threshold', '3', '하품 횟수 임계값 (3분 내)'),
-('w1_ear', '0.35', '졸음점수 EAR 가중치'),
-('w2_mar', '0.25', '졸음점수 MAR 가중치'),
-('w3_head', '0.20', '졸음점수 Head Pose 가중치'),
-('w4_env', '0.20', '졸음점수 환경 가중치'),
-('co2_warning', '1000', 'CO2 경고 임계값 (ppm)'),
-('temp_warning', '26', '온도 졸음유발 임계값 (C)')
+('w1_ear', '0.45', '졸음점수 EAR 가중치'),
+('w2_mar', '0.30', '졸음점수 MAR 가중치'),
+('w3_head', '0.25', '졸음점수 Head Pose 가중치')
 ON DUPLICATE KEY UPDATE setting_key=setting_key;

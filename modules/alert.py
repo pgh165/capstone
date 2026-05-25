@@ -1,216 +1,69 @@
 """
-GPIO 경고 출력 제어 모듈
+경고 출력 제어 모듈
 
-졸음 경고 단계에 따라 RGB LED와 부저를 제어한다.
-데스크탑 모드에서는 콘솔 출력으로 대체한다.
+졸음 경고 단계에 따라 콘솔 출력과 TTS 음성 경보를 출력한다.
 """
 
 import sys
 import os
-import time
-import threading
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import config
 
 
 class AlertController:
-    """경고 단계에 따라 LED/부저를 제어하는 클래스."""
-
-    # 경고 단계 라벨
     LEVEL_LABELS = {
-        0: "정상 (녹색 LED)",
-        1: "주의 (황색 LED + 짧은 알림음)",
-        2: "경고 (적색 LED + 연속 부저)",
-        3: "위험 (적색 LED 점멸 + 강한 연속 부저)",
+        0: "정상",
+        1: "주의 — 졸음 감지",
+        2: "경고 — 졸음 수준 높음",
+        3: "위험 — 즉시 휴식 필요",
+    }
+
+    # 히스테리시스: 레벨 하강 시 적용되는 낮은 임계값 (진동 방지)
+    # 예) 레벨1로 올라가려면 >40 필요, 레벨0으로 내려오려면 <30 필요
+    _DOWN_THRESHOLDS = {
+        1: 30,  # 레벨1→0: 30 미만이어야 복귀
+        2: 58,  # 레벨2→1: 58 미만이어야 복귀
+        3: 75,  # 레벨3→2: 75 미만이어야 복귀
     }
 
     def __init__(self, voice=None):
         self._voice = voice
         self._current_level = -1
-        self._gpio_initialized = False
-        self._buzzer_pwm = None
-        self._blink_thread = None
-        self._blink_running = False
 
-        if not config.IS_DESKTOP:
-            self._init_gpio()
+    def update(self, score: float, level: int):
+        """점수와 판정 레벨을 받아 히스테리시스를 적용한 후 경고를 발생시킨다."""
+        effective_level = level
 
-    def _init_gpio(self):
-        """라즈베리파이 GPIO를 초기화한다."""
-        try:
-            import RPi.GPIO as GPIO
+        # 레벨이 내려가는 경우: 히스테리시스 임계값을 통과해야만 내림
+        if level < self._current_level:
+            threshold = self._DOWN_THRESHOLDS.get(self._current_level, 0)
+            if score >= threshold:
+                effective_level = self._current_level  # 아직 내리지 않음
 
-            GPIO.setmode(GPIO.BCM)
-            GPIO.setwarnings(False)
-
-            # LED 핀 출력 설정
-            GPIO.setup(config.GPIO_LED_RED, GPIO.OUT)
-            GPIO.setup(config.GPIO_LED_GREEN, GPIO.OUT)
-            GPIO.setup(config.GPIO_LED_BLUE, GPIO.OUT)
-
-            # 부저 PWM 설정
-            GPIO.setup(config.GPIO_BUZZER, GPIO.OUT)
-            self._buzzer_pwm = GPIO.PWM(config.GPIO_BUZZER, 1000)  # 1kHz
-
-            # 초기 상태: 모든 LED OFF
-            GPIO.output(config.GPIO_LED_RED, GPIO.LOW)
-            GPIO.output(config.GPIO_LED_GREEN, GPIO.LOW)
-            GPIO.output(config.GPIO_LED_BLUE, GPIO.LOW)
-
-            self._gpio_initialized = True
-            print("[alert] GPIO 초기화 완료")
-        except ImportError:
-            print("[alert] RPi.GPIO 라이브러리를 찾을 수 없습니다.")
-        except Exception as e:
-            print(f"[alert] GPIO 초기화 실패: {e}")
-
-    # ──────────────────────────────────────────────────────────────
-    #  LED 제어 (내부)
-    # ──────────────────────────────────────────────────────────────
-    def _set_led(self, red, green, blue):
-        """RGB LED 상태를 설정한다 (RPi 전용)."""
-        if not self._gpio_initialized:
+        if effective_level == self._current_level:
             return
-        try:
-            import RPi.GPIO as GPIO
-            GPIO.output(config.GPIO_LED_RED, GPIO.HIGH if red else GPIO.LOW)
-            GPIO.output(config.GPIO_LED_GREEN, GPIO.HIGH if green else GPIO.LOW)
-            GPIO.output(config.GPIO_LED_BLUE, GPIO.HIGH if blue else GPIO.LOW)
-        except Exception:
-            pass
+        self._current_level = effective_level
 
-    def _all_led_off(self):
-        """모든 LED를 끈다."""
-        self._set_led(False, False, False)
+        label = self.LEVEL_LABELS.get(effective_level, f"알 수 없는 단계 ({effective_level})")
+        print(f"[ALERT] Level {effective_level}: {label}")
 
-    # ──────────────────────────────────────────────────────────────
-    #  부저 제어 (내부)
-    # ──────────────────────────────────────────────────────────────
-    def _buzzer_on(self, frequency=1000, duty=50):
-        """부저를 켠다."""
-        if self._buzzer_pwm is not None:
-            try:
-                self._buzzer_pwm.ChangeFrequency(frequency)
-                self._buzzer_pwm.start(duty)
-            except Exception:
-                pass
+        if self._voice and effective_level > 0:
+            phrase = config.ALERT_PHRASES.get(effective_level, "")
+            if phrase:
+                self._voice.speak(phrase, priority=True)
 
-    def _buzzer_off(self):
-        """부저를 끈다."""
-        if self._buzzer_pwm is not None:
-            try:
-                self._buzzer_pwm.stop()
-            except Exception:
-                pass
-
-    # ──────────────────────────────────────────────────────────────
-    #  LED 점멸 스레드 (3단계용)
-    # ──────────────────────────────────────────────────────────────
-    def _stop_blink(self):
-        """점멸 스레드를 중지한다."""
-        self._blink_running = False
-        if self._blink_thread is not None:
-            self._blink_thread.join(timeout=1.0)
-            self._blink_thread = None
-
-    def _start_blink(self):
-        """적색 LED 점멸 스레드를 시작한다."""
-        self._stop_blink()
-        self._blink_running = True
-        self._blink_thread = threading.Thread(target=self._blink_loop, daemon=True)
-        self._blink_thread.start()
-
-    def _blink_loop(self):
-        """적색 LED를 0.3초 간격으로 점멸한다."""
-        while self._blink_running:
-            self._set_led(True, False, False)
-            time.sleep(0.3)
-            if not self._blink_running:
-                break
-            self._set_led(False, False, False)
-            time.sleep(0.3)
-
-    # ──────────────────────────────────────────────────────────────
-    #  경고 단계 설정 (메인 인터페이스)
-    # ──────────────────────────────────────────────────────────────
-    def set_alert_level(self, level):
-        """경고 단계를 설정하고 LED/부저를 제어한다.
-
-        Args:
-            level (int): 0(정상), 1(주의), 2(경고), 3(위험).
-        """
-        # 같은 단계면 중복 처리하지 않음
+    def set_alert_level(self, level: int):
+        """하위 호환용. 점수 없이 레벨만 받는 경우 히스테리시스 미적용."""
         if level == self._current_level:
             return
-
         self._current_level = level
-
-        if config.IS_DESKTOP:
-            self._set_alert_desktop(level)
-        else:
-            self._set_alert_gpio(level)
-
-    def _set_alert_desktop(self, level):
-        """데스크탑 모드: 콘솔에 경고 상태를 출력하고 TTS로 발화한다."""
         label = self.LEVEL_LABELS.get(level, f"알 수 없는 단계 ({level})")
         print(f"[ALERT] Level {level}: {label}")
-
         if self._voice and level > 0:
             phrase = config.ALERT_PHRASES.get(level, "")
             if phrase:
                 self._voice.speak(phrase, priority=True)
 
-    def _set_alert_gpio(self, level):
-        """라즈베리파이 모드: GPIO로 LED/부저를 제어한다."""
-        # 이전 상태 정리
-        self._stop_blink()
-        self._buzzer_off()
-        self._all_led_off()
-
-        if level == 0:
-            # 정상: 녹색 LED, 부저 없음
-            self._set_led(False, True, False)
-
-        elif level == 1:
-            # 주의: 황색 LED (적+녹), 짧은 비프
-            self._set_led(True, True, False)
-            self._short_beep()
-
-        elif level == 2:
-            # 경고: 적색 LED, 연속 부저
-            self._set_led(True, False, False)
-            self._buzzer_on(frequency=1000, duty=50)
-
-        elif level == 3:
-            # 위험: 적색 LED 점멸, 강한 연속 부저
-            self._start_blink()
-            self._buzzer_on(frequency=2000, duty=80)
-
-    def _short_beep(self, duration=0.2):
-        """짧은 비프음을 낸다 (별도 스레드에서 실행하여 메인 루프 블로킹 방지)."""
-        def _beep():
-            self._buzzer_on(frequency=1000, duty=50)
-            time.sleep(duration)
-            self._buzzer_off()
-        threading.Thread(target=_beep, daemon=True).start()
-
-    # ──────────────────────────────────────────────────────────────
-    #  정리
-    # ──────────────────────────────────────────────────────────────
     def cleanup(self):
-        """GPIO 자원을 해제한다."""
-        self._stop_blink()
-        self._buzzer_off()
-
-        if self._gpio_initialized:
-            try:
-                import RPi.GPIO as GPIO
-                self._all_led_off()
-                GPIO.cleanup()
-                print("[alert] GPIO 정리 완료")
-            except Exception:
-                pass
-
-        self._gpio_initialized = False
-        self._current_level = -1
+        pass

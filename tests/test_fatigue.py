@@ -23,16 +23,14 @@ class TestFatigueManager(unittest.TestCase):
 
     def test_update_with_normal_data(self):
         """정상 데이터 업데이트 - 피로도 낮음"""
-        env = {"co2": 500, "temperature": 22, "humidity": 50}
-        self.fm.update(drowsiness_score=10, alert_level=0, env_data=env)
+        self.fm.update(drowsiness_score=10, alert_level=0)
         self.assertLessEqual(self.fm.fatigue_score, config.FATIGUE_GOOD_MAX)
 
     def test_drowsiness_events_increase_fatigue(self):
         """졸음 감지가 쌓이면 피로도 증가"""
-        env = {"co2": 500, "temperature": 22, "humidity": 50}
-        # alert_level >= 1 이벤트를 여러 번 발생
+        # alert_level >= 2 이벤트를 여러 번 발생
         for _ in range(6):
-            self.fm.update(drowsiness_score=70, alert_level=2, env_data=env)
+            self.fm.update(drowsiness_score=70, alert_level=2)
         self.assertGreater(self.fm.fatigue_score, 0)
 
     def test_fatigue_level_transitions(self):
@@ -79,7 +77,7 @@ class TestFatigueManager(unittest.TestCase):
         guides = self.fm.get_recommended_guide()
         # 기본 가이드는 항상 포함
         self.assertIn("eye_rest", guides)
-        # 원인별 가이드가 추가됨 (work/drowsy/env 중 하나)
+        # 원인별 가이드가 추가됨 (work/drowsy 중 하나)
         self.assertGreater(len(guides), 1)
 
     def test_recommended_guide_danger(self):
@@ -108,13 +106,6 @@ class TestFatigueManager(unittest.TestCase):
         cause = self.fm.get_dominant_cause()
         self.assertEqual(cause, "drowsy")
 
-    def test_dominant_cause_env(self):
-        """환경 스트레스가 주 원인일 때 env 반환"""
-        # CO2 스트레스가 20분(1200초) 전부터 지속
-        self.fm._co2_stress_start = time.time() - 1200
-        cause = self.fm.get_dominant_cause()
-        self.assertEqual(cause, "env")
-
     def test_guide_includes_cause_specific(self):
         """원인별 맞춤 가이드가 포함되는지 확인"""
         self.fm._fatigue_score = 75  # warning 단계
@@ -135,7 +126,6 @@ class TestFatigueManager(unittest.TestCase):
         self.assertIn("fatigue_level", status)
         self.assertIn("continuous_work_min", status)
         self.assertIn("drowsy_count_30min", status)
-        self.assertIn("env_stress_score", status)
 
 
 class TestRecoverySession(unittest.TestCase):

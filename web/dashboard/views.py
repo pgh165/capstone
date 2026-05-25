@@ -1,4 +1,5 @@
 import json
+import os
 from datetime import date, datetime, timedelta
 
 from django.core.serializers.json import DjangoJSONEncoder
@@ -19,9 +20,6 @@ ALLOWED_SETTINGS = {
     'w1_ear':               {'min': 0.0,  'max': 1.0,   'type': float},
     'w2_mar':               {'min': 0.0,  'max': 1.0,   'type': float},
     'w3_head':              {'min': 0.0,  'max': 1.0,   'type': float},
-    'w4_env':               {'min': 0.0,  'max': 1.0,   'type': float},
-    'co2_warning':          {'min': 400,  'max': 5000,  'type': int},
-    'temp_warning':         {'min': 15,   'max': 40,    'type': int},
 }
 
 
@@ -37,14 +35,42 @@ def _to_dict(obj):
     return d
 
 
+_STATUS_FILE = "/app/data/realtime_status.json"
+
+
 def index(request):
     return render(request, 'dashboard/index.html')
 
 
+def realtime(request):
+    return render(request, 'dashboard/realtime.html')
+
+
+def settings_page(request):
+    return render(request, 'dashboard/settings.html')
+
+
+def api_realtime(request):
+    """main.py가 매초 기록하는 상태 파일을 읽어 반환한다."""
+    try:
+        with open(_STATUS_FILE) as f:
+            data = json.load(f)
+        age = datetime.now().timestamp() - data.get("ts", 0)
+        data["stale"] = age > 5
+        return JsonResponse({"success": True, "data": data})
+    except FileNotFoundError:
+        return JsonResponse({"success": False, "error": "main.py가 실행 중이 아닙니다."})
+    except Exception as e:
+        return JsonResponse({"success": False, "error": str(e)})
+
+
 def api_fatigue(request):
     period = request.GET.get('period', 'today')
+    filter_date = request.GET.get('date')
     qs = FatigueLog.objects.all()
-    if period == 'week':
+    if filter_date:
+        qs = qs.filter(logged_at__date=filter_date)
+    elif period == 'week':
         qs = qs.filter(logged_at__gte=datetime.now() - timedelta(days=7))
     elif period == 'month':
         qs = qs.filter(logged_at__gte=datetime.now() - timedelta(days=30))
@@ -94,21 +120,7 @@ def api_recovery(request):
 
 
 def api_environment(request):
-    hours = max(1, min(168, int(request.GET.get('hours', 24))))
-    since = datetime.now() - timedelta(hours=hours)
-    qs = (
-        DetectionLog.objects
-        .filter(detected_at__gte=since)
-        .order_by('detected_at')
-        .values('detected_at', 'co2_ppm', 'temperature', 'humidity', 'env_score')
-    )
-    data = []
-    for r in qs:
-        row = dict(r)
-        if isinstance(row.get('detected_at'), datetime):
-            row['detected_at'] = row['detected_at'].isoformat()
-        data.append(row)
-    return JsonResponse({'success': True, 'hours': hours, 'data': data})
+    return JsonResponse({'success': False, 'error': '환경 센서 기능이 제거되었습니다.'}, status=410)
 
 
 def api_daily_report(request):
@@ -127,8 +139,6 @@ def api_daily_report(request):
         alert_count_level1=Count('id', filter=Q(alert_level=1)),
         alert_count_level2=Count('id', filter=Q(alert_level=2)),
         alert_count_level3=Count('id', filter=Q(alert_level=3)),
-        avg_co2=Avg('co2_ppm'),
-        avg_temperature=Avg('temperature'),
     )
     fat = FatigueLog.objects.filter(logged_at__date=target).aggregate(
         avg_fatigue_score=Avg('fatigue_score')

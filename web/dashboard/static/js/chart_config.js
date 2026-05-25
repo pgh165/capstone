@@ -1,5 +1,5 @@
 /**
- * AIoT 졸음 방지 시스템 - Chart.js 설정
+ * AI 기반 학습 피로 관리 시스템 - Chart.js 설정
  */
 
 const CHART_COLORS = {
@@ -83,16 +83,16 @@ function createDrowsinessChart(canvasId) {
                     annotations: {
                         cautionLine: {
                             type: 'line',
-                            yMin: 30,
-                            yMax: 30,
+                            yMin: 40,
+                            yMax: 40,
                             borderColor: 'rgba(133,79,11,0.5)',
                             borderDash: [5, 5],
                             borderWidth: 1
                         },
                         warningLine: {
                             type: 'line',
-                            yMin: 60,
-                            yMax: 60,
+                            yMin: 70,
+                            yMax: 70,
                             borderColor: 'rgba(153,60,29,0.5)',
                             borderDash: [5, 5],
                             borderWidth: 1
@@ -145,74 +145,8 @@ function createFatigueChart(canvasId) {
     });
 }
 
-// 환경 센서 차트 (다축)
-function createEnvironmentChart(canvasId) {
-    const ctx = document.getElementById(canvasId).getContext('2d');
-    return new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: [],
-            datasets: [
-                {
-                    label: 'CO₂ (ppm)',
-                    data: [],
-                    borderColor: CHART_COLORS.warning,
-                    backgroundColor: 'transparent',
-                    yAxisID: 'y-co2',
-                    tension: 0.3,
-                    pointRadius: 1,
-                    borderWidth: 2
-                },
-                {
-                    label: '온도 (°C)',
-                    data: [],
-                    borderColor: CHART_COLORS.danger,
-                    backgroundColor: 'transparent',
-                    yAxisID: 'y-temp',
-                    tension: 0.3,
-                    pointRadius: 1,
-                    borderWidth: 2
-                },
-                {
-                    label: '습도 (%)',
-                    data: [],
-                    borderColor: CHART_COLORS.info,
-                    backgroundColor: 'transparent',
-                    yAxisID: 'y-temp',
-                    tension: 0.3,
-                    pointRadius: 1,
-                    borderWidth: 2
-                }
-            ]
-        },
-        options: {
-            ...commonOptions,
-            scales: {
-                x: commonOptions.scales.x,
-                'y-co2': {
-                    type: 'linear',
-                    position: 'left',
-                    beginAtZero: false,
-                    title: { display: true, text: 'CO₂ (ppm)' },
-                    ticks: { font: { size: 11 } },
-                    grid: { color: 'rgba(0,0,0,0.05)' }
-                },
-                'y-temp': {
-                    type: 'linear',
-                    position: 'right',
-                    beginAtZero: false,
-                    title: { display: true, text: '온도(°C) / 습도(%)' },
-                    ticks: { font: { size: 11 } },
-                    grid: { display: false }
-                }
-            }
-        }
-    });
-}
-
 // 차트 초기화
 function initCharts() {
     window.drowsinessChart = createDrowsinessChart('drowsinessChart');
     window.fatigueChart = createFatigueChart('fatigueChart');
-    window.environmentChart = createEnvironmentChart('environmentChart');
 }

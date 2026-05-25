@@ -22,7 +22,6 @@ import config
 CAUSE_LABELS = {
     "work": "장시간 연속 작업",
     "drowsy": "졸음 빈번 감지",
-    "env": "환경 스트레스(CO2/온도/습도)",
 }
 
 LEVEL_LABELS = {
@@ -32,12 +31,16 @@ LEVEL_LABELS = {
 }
 
 SYSTEM_PROMPT = (
-    "당신은 사용자의 졸음과 피로를 실시간으로 관리하는 헬스 코치입니다. "
-    "얼굴 감지(EAR/MAR), 연속 작업 시간, 환경 센서(CO2/온도/습도), "
-    "과거 회복 이력을 참고해서 한국어로 간결하고 친근하게 조언합니다. "
-    "답변 규칙: (1) 4~6문장, (2) 마크다운이나 번호 목록 금지, "
-    "(3) 사용자를 '님'으로 부르고 공감 먼저, 행동 제안 뒤에 제시, "
-    "(4) 현재 상황의 주된 원인을 짚고 즉시 할 수 있는 구체적 행동을 1~2개 제안."
+    "당신은 사용자 곁에서 실시간으로 피로와 졸음을 챙겨주는 친근한 AI 동반자입니다. "
+    "얼굴 감지 수치, 연속 작업 시간, 환경 데이터를 보고 말을 건넵니다. "
+    "답변 규칙: "
+    "(1) 반드시 3~4문장, 절대 그 이상 쓰지 않는다. "
+    "(2) 마크다운·번호 목록·특수문자 금지 — 자연스러운 대화체로만 쓴다. "
+    "(3) 첫 문장은 공감('많이 피곤하시겠어요', '조금 힘드시죠?' 등), "
+    "    두 번째 문장은 지금 당장 할 수 있는 구체적인 휴식 방법 1가지 제안, "
+    "    세 번째 문장은 따뜻한 응원으로 마무리한다. "
+    "(4) 음성으로 읽힐 텍스트이므로 자연스럽게 들려야 한다. "
+    "(5) 사용자를 '님'으로 부른다."
 )
 
 
@@ -47,18 +50,17 @@ class LLMCoach:
     def __init__(self):
         self.enabled = config.LLM_ENABLED
         self.host = config.LLM_HOST.rstrip("/")
-        self.model = config.LLM_MODEL
+        self.model = getattr(config, "LLM_COACH_MODEL", config.LLM_MODEL)
         self.timeout = config.LLM_TIMEOUT
         self.cooldown = config.LLM_COOLDOWN
 
         self._last_request_time = 0.0
-        self._worker = None            # 현재 실행 중인 스레드
-        self._pending_result = None    # 스레드가 완료되면 채워짐
+        self._worker = None
+        self._pending_result = None
         self._lock = threading.Lock()
-        self._available = None         # None=미확인, True/False=확인됨
+        self._available = None
 
         if self.enabled:
-            # 지연 초기화 — 서버 체크는 첫 호출 시
             print(f"[llm_coach] LLM 코치 활성화 (model={self.model})")
         else:
             print("[llm_coach] LLM 코치 비활성화 (config.LLM_ENABLED=False)")
@@ -102,7 +104,6 @@ class LLMCoach:
         guide_names = context.get("guide_types") or []
         guide_str = ", ".join(guide_names) if guide_names else "(없음)"
 
-        env = context.get("env", {})
         history = context.get("recovery_history_summary", "")
 
         lines = [
@@ -110,8 +111,6 @@ class LLMCoach:
             f"주된 피로 원인: {cause_label}",
             f"연속 작업 시간: {context.get('work_min', 0):.0f}분",
             f"최근 30분 졸음 감지 횟수: {context.get('drowsy_count', 0)}회",
-            f"CO2: {env.get('co2', 0)}ppm, 온도: {env.get('temp', 0)}°C, "
-            f"습도: {env.get('humid', 0)}%",
             f"현재 권장 가이드: {guide_str}",
         ]
         if history:
@@ -120,7 +119,8 @@ class LLMCoach:
         context_block = "\n".join(lines)
         return (
             f"{context_block}\n\n"
-            f"위 상황에 맞는 개인화된 졸음 관리 조언을 작성해 주세요."
+            f"위 상황을 보고, 음성으로 읽힐 짧고 친근한 말을 건네주세요. "
+            f"구체적인 휴식 방법(스트레칭, 눈 운동, 물 마시기 등)을 한 가지 자연스럽게 추천해 주세요."
         )
 
     # ──────────────────────────────────────────────────────────────
@@ -146,7 +146,11 @@ class LLMCoach:
         )
         with urlreq.urlopen(req, timeout=self.timeout) as resp:
             body = json.loads(resp.read().decode("utf-8"))
-            return body.get("response", "").strip()
+            text = body.get("response", "").strip()
+            # thinking 모델(<think>...</think>) 내부 추론 토큰 제거
+            import re as _re
+            text = _re.sub(r"<think>.*?</think>", "", text, flags=_re.DOTALL).strip()
+            return text
 
     # ──────────────────────────────────────────────────────────────
     #  워커 스레드

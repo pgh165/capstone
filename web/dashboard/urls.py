@@ -3,6 +3,9 @@ from . import views
 
 urlpatterns = [
     path('', views.index, name='index'),
+    path('realtime/', views.realtime, name='realtime'),
+    path('settings/', views.settings_page, name='settings'),
+    path('api/realtime/', views.api_realtime, name='api_realtime'),
     path('api/fatigue/', views.api_fatigue, name='api_fatigue'),
     path('api/logs/', views.api_logs, name='api_logs'),
     path('api/recovery/', views.api_recovery, name='api_recovery'),
