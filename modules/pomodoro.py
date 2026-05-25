@@ -146,8 +146,8 @@ class PomodoroTimer:
             return {
                 "state":         self.WORKING,
                 "cycle":         self.cycle + 1,
-                "elapsed_min":   round(elapsed / 60, 1),
-                "remaining_min": round(remaining / 60, 1),
+                "elapsed_min":   round(elapsed / 60, 3),
+                "remaining_min": round(remaining / 60, 3),
                 "planned_min":   round(self._planned_work_sec / 60),
             }
         if self.state == self.BREAK and self._break_start:
@@ -156,8 +156,8 @@ class PomodoroTimer:
             return {
                 "state":         self.BREAK,
                 "cycle":         self.cycle + 1,
-                "elapsed_min":   round(elapsed / 60, 1),
-                "remaining_min": round(remaining / 60, 1),
+                "elapsed_min":   round(elapsed / 60, 3),
+                "remaining_min": round(remaining / 60, 3),
                 "planned_min":   round(self._planned_break_sec / 60),
             }
         return {"state": self.IDLE, "cycle": self.cycle}
