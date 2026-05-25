@@ -369,6 +369,15 @@
         <span>사이클 <b id="pomo-cycle">--</b></span>
         <span>완료 <b id="pomo-done">0</b>회</span>
       </div>
+      <button id="pomo-reset-btn" onclick="pomoReset()" style="
+        margin-top:16px; padding:7px 24px;
+        background:transparent; border:1px solid var(--border);
+        border-radius:8px; color:var(--muted); font-size:0.8rem;
+        cursor:pointer; transition:border-color .2s, color .2s;
+      " onmouseover="this.style.borderColor='var(--danger)';this.style.color='var(--danger)'"
+         onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--muted)'">
+        ↺ 타이머 초기화
+      </button>
     </div>
 
     <!-- 졸음 점수 라인 차트 (최근 60초) -->
@@ -723,6 +732,30 @@ function setOffline() {
   if (lastSeenTime) {
     const t = lastSeenTime.toLocaleTimeString('ko-KR', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
     document.getElementById('offline-last-seen').textContent = `마지막 수신: ${t}`;
+  }
+}
+
+async function pomoReset() {
+  const btn = document.getElementById('pomo-reset-btn');
+  btn.disabled = true;
+  btn.textContent = '초기화 중...';
+  try {
+    const res = await fetch('/api/command/', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({cmd: 'pomo_reset'}),
+    });
+    const j = await res.json();
+    if (j.success) {
+      btn.textContent = '✓ 초기화됨';
+      setTimeout(() => { btn.disabled = false; btn.textContent = '↺ 타이머 초기화'; }, 2000);
+    } else {
+      btn.textContent = '오류 발생';
+      setTimeout(() => { btn.disabled = false; btn.textContent = '↺ 타이머 초기화'; }, 2000);
+    }
+  } catch (e) {
+    btn.textContent = '연결 실패';
+    setTimeout(() => { btn.disabled = false; btn.textContent = '↺ 타이머 초기화'; }, 2000);
   }
 }
 

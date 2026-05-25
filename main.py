@@ -156,6 +156,7 @@ def main():
 
     # 실시간 상태 공유 파일 경로 (Docker 볼륨 마운트 경로와 일치)
     STATUS_FILE = os.path.join(config.BASE_DIR, "data", "realtime_status.json")
+    CMD_FILE    = os.path.join(config.BASE_DIR, "data", "cmd.json")
 
     try:
         while True:
@@ -323,7 +324,21 @@ def main():
                         f"다음 작업은 {next_ev['planned_min']}분입니다."
                     )
 
-            # 9-1. LLM 코칭 결과 폴링 (비동기 응답 도착 시 출력)
+            # 9-1. 커맨드 파일 폴링 (대시보드 → main.py 제어)
+            try:
+                if os.path.exists(CMD_FILE):
+                    import json as _json2
+                    with open(CMD_FILE) as _cf:
+                        _cmd = _json2.load(_cf)
+                    os.remove(CMD_FILE)
+                    if _cmd.get("cmd") == "pomo_reset":
+                        pomodoro.reset()
+                        fatigue_manager.reset_work_timer()
+                        voice.speak("포모도로 타이머를 초기화했습니다.")
+            except Exception:
+                pass
+
+            # 9-2. LLM 코칭 결과 폴링 (비동기 응답 도착 시 출력)
             llm_result = llm_coach.poll_result()
             if llm_result:
                 llm_coach.display(llm_result)

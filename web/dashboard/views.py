@@ -36,6 +36,7 @@ def _to_dict(obj):
 
 
 _STATUS_FILE = "/app/data/realtime_status.json"
+_CMD_FILE    = "/app/data/cmd.json"
 
 
 def index(request):
@@ -150,6 +151,25 @@ def api_daily_report(request):
 
     data = {'summary_date': target, **det, **fat, **rec}
     return JsonResponse({'success': True, 'data': data, 'source': 'realtime'})
+
+
+_ALLOWED_CMDS = {'pomo_reset'}
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def api_command(request):
+    """대시보드 → main.py 제어 커맨드를 cmd.json에 기록한다."""
+    import time as _time
+    try:
+        body = json.loads(request.body or '{}')
+        cmd = body.get('cmd')
+        if cmd not in _ALLOWED_CMDS:
+            return JsonResponse({'success': False, 'error': '허용되지 않는 커맨드입니다.'}, status=400)
+        with open(_CMD_FILE, 'w') as f:
+            json.dump({'cmd': cmd, 'ts': _time.time()}, f)
+        return JsonResponse({'success': True})
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
 
 @csrf_exempt

@@ -171,6 +171,17 @@ class PomodoroTimer:
         self._hourly_pattern = pattern
         print(f"[pomodoro] 시간대별 피로 패턴 로드 ({len(pattern)}개 시간대)")
 
+    def reset(self):
+        """포모도로 타이머를 초기 상태로 리셋한다."""
+        self.state = self.IDLE
+        self.cycle = 0
+        self._work_start  = None
+        self._break_start = None
+        self._planned_work_sec  = (self._personal_base_min or config.POMODORO_BASE_WORK_MIN) * 60
+        self._planned_break_sec = config.POMODORO_BASE_BREAK_MIN * 60
+        self._last_emergency = 0.0
+        print("[pomodoro] 🔄 타이머 리셋 — 대기 상태로 복귀")
+
     def set_personal_base_min(self, minutes: int):
         """DB 학습 기반 개인 최적 작업 인터벌 기준을 설정한다."""
         clamped = max(config.POMODORO_MIN_WORK_MIN,

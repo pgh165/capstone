@@ -12,4 +12,5 @@ urlpatterns = [
     path('api/environment/', views.api_environment, name='api_environment'),
     path('api/daily_report/', views.api_daily_report, name='api_daily_report'),
     path('api/settings/', views.api_settings, name='api_settings'),
+    path('api/command/', views.api_command, name='api_command'),
 ]
