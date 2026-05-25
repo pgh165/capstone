@@ -25,6 +25,7 @@ class Voice:
         self.engine  = getattr(config, "TTS_ENGINE",  "espeak-ng")
 
         self._q: queue.Queue = queue.Queue()
+        self._speaking = threading.Event()  # 재생 중일 때 set
         self._thread = threading.Thread(target=self._worker, daemon=True)
 
         if self.enabled:
@@ -49,6 +50,14 @@ class Voice:
             self._drain()
         self._q.put(text.strip())
 
+    def speak_and_wait(self, text: str):
+        """text를 음성으로 출력하고 재생이 완전히 끝날 때까지 블로킹한다."""
+        if not self.enabled or not text or not text.strip():
+            return
+        self._q.put(text.strip())
+        # 큐가 비고 재생도 끝날 때까지 대기
+        self._q.join()
+
     def stop(self):
         """대기 큐를 비우고 워커 스레드를 종료한다."""
         self._drain()
@@ -68,11 +77,14 @@ class Voice:
         while True:
             item = self._q.get()
             if item is _SENTINEL:
+                self._q.task_done()
                 break
             try:
                 self._synthesize(item)
             except Exception as e:
                 print(f"[voice] 발화 오류: {e}")
+            finally:
+                self._q.task_done()
 
     def _synthesize(self, text: str):
         if self.engine == "espeak-ng":

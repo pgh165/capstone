@@ -145,9 +145,9 @@ def main():
         target_min = max(10, int(optimal["avg_min"] * 0.85))
         pomodoro.set_personal_base_min(target_min)
 
-    # 시작 안내 TTS (완료 후 측정 시작)
+    # 시작 안내 TTS (재생 완료 후 측정 시작)
     print("[main] 시작 안내 음성 출력 중...")
-    voice.speak("AI 학습 피로 관리 시스템을 시작합니다. 카메라를 바라봐 주세요.")
+    voice.speak_and_wait("AI 학습 피로 관리 시스템을 시작합니다. 카메라를 바라봐 주세요.")
 
     print("[main] 'q' 키를 눌러 종료")
     print()
