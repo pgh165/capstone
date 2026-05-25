@@ -416,6 +416,29 @@ const FATIGUE_COLORS = {
   danger:  { color: '#f44336', bg: '#3a1b1b', label: '위험' },
 };
 
+// 포모도로 로컬 카운터 (서버 동기화 후 클라이언트에서 1초씩 차감)
+const pomoLocal = {
+  state: 'idle', remainingSec: 0, elapsedSec: 0, plannedSec: 1,
+  syncAt: 0, color: 'var(--accent)', stateText: '대기 중',
+};
+
+function tickPomo() {
+  if (pomoLocal.state === 'idle') return;
+  const drift = (performance.now() - pomoLocal.syncAt) / 1000;
+  const remaining = Math.max(0, pomoLocal.remainingSec - drift);
+  const elapsed   = pomoLocal.elapsedSec + drift;
+  const barPct    = pomoLocal.state === 'working'
+    ? Math.min(100, (elapsed / pomoLocal.plannedSec) * 100)
+    : Math.min(100, ((pomoLocal.plannedSec - remaining) / pomoLocal.plannedSec) * 100);
+
+  const clockEl = document.getElementById('pomo-clock');
+  clockEl.textContent = fmtClock(remaining / 60);
+  clockEl.style.color = pomoLocal.color;
+  document.getElementById('pomo-bar').style.width      = barPct + '%';
+  document.getElementById('pomo-bar').style.background = pomoLocal.color;
+  document.getElementById('pomo-elapsed').textContent  = fmtMin(elapsed / 60);
+}
+
 const MAX_POINTS = 60;
 const STORAGE_KEY = 'rt_chart_history';
 
@@ -670,33 +693,21 @@ async function poll() {
     fb.style.width = fs + '%';
     fb.style.background = fc.color;
 
-    // 포모도로
+    // 포모도로 — 서버 데이터로 로컬 카운터 동기화
     const pomo = d.pomo ?? {};
     const state = pomo.state ?? 'idle';
-    let stateText = '대기 중', barPct = 0, clockMin = null, elapsedText = '--';
-    let pomoColor = 'var(--accent)';
-    if (state === 'working') {
-      stateText  = '🍅 작업 중';
-      pomoColor  = 'var(--accent)';
-      const planned = pomo.planned_min || 1;
-      barPct     = Math.min(100, (pomo.elapsed_min / planned) * 100);
-      clockMin   = pomo.remaining_min;
-      elapsedText = fmtMin(pomo.elapsed_min);
-    } else if (state === 'break') {
-      stateText  = '💤 휴식 중';
-      pomoColor  = 'var(--normal)';
-      const planned = pomo.planned_min || 1;
-      barPct     = Math.min(100, ((planned - (pomo.remaining_min||0)) / planned) * 100);
-      clockMin   = pomo.remaining_min;
-      elapsedText = fmtMin(pomo.elapsed_min);
+    if (state === 'working' || state === 'break') {
+      pomoLocal.remainingSec = Math.round((pomo.remaining_min ?? 0) * 60);
+      pomoLocal.elapsedSec   = Math.round((pomo.elapsed_min  ?? 0) * 60);
+      pomoLocal.plannedSec   = Math.round((pomo.planned_min  ?? 1) * 60);
+      pomoLocal.state        = state;
+      pomoLocal.syncAt       = performance.now();
+      pomoLocal.color        = state === 'working' ? 'var(--accent)' : 'var(--normal)';
+      pomoLocal.stateText    = state === 'working' ? '🍅 작업 중' : '💤 휴식 중';
+    } else {
+      pomoLocal.state = 'idle';
     }
-    const clockEl = document.getElementById('pomo-clock');
-    clockEl.textContent  = fmtClock(clockMin);
-    clockEl.style.color  = pomoColor;
-    document.getElementById('pomo-bar').style.width     = barPct + '%';
-    document.getElementById('pomo-bar').style.background = pomoColor;
-    document.getElementById('pomo-state').textContent   = stateText;
-    document.getElementById('pomo-elapsed').textContent = elapsedText;
+    document.getElementById('pomo-state').textContent   = pomoLocal.stateText ?? '대기 중';
     document.getElementById('pomo-cycle').textContent   = pomo.cycle ?? '--';
     const doneCycles = pomo.cycle
       ? (state === 'working' ? pomo.cycle - 1 : pomo.cycle)
@@ -761,6 +772,7 @@ async function pomoReset() {
 
 poll();
 setInterval(poll, 1000);
+setInterval(tickPomo, 1000);
 </script>
 </body>
 </html>
