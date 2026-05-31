@@ -72,7 +72,11 @@ class Camera:
     def release(self):
         if self._proc is not None:
             self._proc.terminate()
-            self._proc.wait()
+            try:
+                self._proc.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                self._proc.kill()
+                self._proc.wait()
         elif self.cap is not None:
             self.cap.release()
         print("[Camera] 카메라 해제 완료")

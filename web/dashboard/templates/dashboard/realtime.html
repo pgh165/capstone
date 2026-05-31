@@ -282,7 +282,12 @@
 </div>
 
 <header>
-  <h1>🍅 AI 포모도로 타이머</h1>
+  <div style="display:flex;align-items:center;gap:12px">
+    <h1>🍅 AI 포모도로 타이머</h1>
+    <span id="user-name-badge" style="font-size:0.82rem;color:var(--muted);display:none">
+      👤 <span id="user-name-text"></span>
+    </span>
+  </div>
   <div style="display:flex;align-items:center;gap:12px">
     <nav class="header-nav">
       <a href="/">📊 대시보드</a>
@@ -773,6 +778,14 @@ async function pomoReset() {
 poll();
 setInterval(poll, 1000);
 setInterval(tickPomo, 1000);
+
+// 사용자 이름 로드
+fetch('/api/profile/').then(r => r.json()).then(json => {
+  if (json.success && json.data.name) {
+    document.getElementById('user-name-text').textContent = json.data.name;
+    document.getElementById('user-name-badge').style.display = 'inline';
+  }
+}).catch(() => {});
 </script>
 </body>
 </html>

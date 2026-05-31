@@ -180,17 +180,17 @@ class FatigueManager:
     # 단계별 기본 가이드 + 원인별 추가 가이드
     _GUIDE_MAP = {
         "caution": {
-            "base": ["eye_rest"],
+            "base": ["eye_rest", "ventilation"],
             "work": ["posture_correction", "hydration"],
             "drowsy": ["face_wash", "breathing"],
         },
         "warning": {
-            "base": ["stretching", "eye_rest"],
+            "base": ["stretching", "eye_rest", "ventilation"],
             "work": ["walk", "hydration", "posture_correction"],
             "drowsy": ["face_wash", "breathing", "caffeine"],
         },
         "danger": {
-            "base": ["rest_break", "stretching", "eye_rest"],
+            "base": ["rest_break", "stretching", "eye_rest", "ventilation"],
             "work": ["walk", "hydration"],
             "drowsy": ["face_wash", "caffeine", "breathing"],
         },

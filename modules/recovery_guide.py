@@ -71,14 +71,12 @@ class RecoveryGuide:
             return []
 
         if guide_types is None:
-            # 하위 호환: guide_types 미지정 시 기본 매핑 사용
             if fatigue_level == "caution":
                 guide_types = ["eye_rest", "ventilation"]
             elif fatigue_level == "warning":
-                guide_types = ["stretching", "breathing", "ventilation"]
+                guide_types = ["stretching", "eye_rest", "ventilation"]
             elif fatigue_level == "danger":
-                guide_types = ["rest_break", "stretching", "breathing",
-                               "ventilation", "eye_rest"]
+                guide_types = ["rest_break", "stretching", "eye_rest", "ventilation"]
             else:
                 return []
 
@@ -146,7 +144,6 @@ class RecoveryGuide:
         cause_labels = {
             "work": "장시간 연속 작업",
             "drowsy": "졸음 빈번 감지",
-            "env": "환경 스트레스(CO2/온도/습도)",
         }
         label = level_labels.get(fatigue_level, fatigue_level)
         print(f"\n[피로 해소 가이드] 현재 피로 단계: {label}")

@@ -120,6 +120,56 @@
     <main>
         <div id="toast"></div>
 
+        <!-- 캘리브레이션 카드 -->
+        <div class="setting-card" style="margin-top:1.5rem">
+            <h3>개인 기준값 캘리브레이션</h3>
+            <div class="setting-row">
+                <div>
+                    <div class="setting-label">EAR 임계값 (개인)</div>
+                    <div class="setting-key" id="calib-ear-val">로드 중...</div>
+                </div>
+                <div class="setting-control">
+                    <span id="calib-ear-badge" style="font-size:0.78rem;padding:3px 10px;border-radius:12px;background:#3fb95018;color:#3fb950">—</span>
+                </div>
+            </div>
+            <div class="setting-row">
+                <div>
+                    <div class="setting-label">MAR 임계값 (개인)</div>
+                    <div class="setting-key" id="calib-mar-val">로드 중...</div>
+                </div>
+                <div class="setting-control">
+                    <span id="calib-mar-badge" style="font-size:0.78rem;padding:3px 10px;border-radius:12px;background:#3fb95018;color:#3fb950">—</span>
+                </div>
+            </div>
+            <div class="setting-row">
+                <div>
+                    <div class="setting-label">재측정</div>
+                    <div class="setting-key">저장된 기준값을 삭제하고 다음 실행 시 30초 재측정</div>
+                </div>
+                <div class="setting-control">
+                    <button class="btn-save" id="calib-reset-btn" style="background:#ef4444">재측정</button>
+                    <span class="save-result" id="calib-reset-result"></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 사용자 프로필 카드 -->
+        <div class="setting-card" style="margin-top:1rem">
+            <h3>사용자 프로필</h3>
+            <div class="setting-row">
+                <div>
+                    <div class="setting-label">이름</div>
+                    <div class="setting-key">표시 이름 (TTS 인사 및 대시보드에 사용)</div>
+                </div>
+                <div class="setting-control">
+                    <input type="text" id="profile-name-input" class="setting-input"
+                           style="width:140px;text-align:left" maxlength="20" placeholder="이름 입력">
+                    <button class="btn-save" id="profile-save-btn">저장</button>
+                    <span class="save-result" id="profile-save-result"></span>
+                </div>
+            </div>
+        </div>
+
         <div class="settings-grid" id="settings-grid">
             <div class="setting-card">
                 <h3>눈 감김 감지 (EAR)</h3>
@@ -220,7 +270,7 @@
     </main>
 
     <footer>
-        <p>AI 기반 학습 피로 관리 시스템 &copy; 2026</p>
+        <p>AI 개인 맞춤형 포모도로 타이머 &copy; 2026</p>
     </footer>
 
     <script>
@@ -286,6 +336,107 @@
     });
 
     loadSettings();
+
+    // 캘리브레이션 상태 로드 (realtime_status.json 폴링)
+    async function loadCalibStatus() {
+        try {
+            const res = await fetch('/api/realtime/');
+            const json = await res.json();
+            if (!json.success) return;
+            const d = json.data;
+            if (d.calib_done) {
+                document.getElementById('calib-ear-val').textContent = `측정값: ${d.calib_ear ?? '—'}`;
+                document.getElementById('calib-mar-val').textContent = `측정값: ${d.calib_mar ?? '—'}`;
+                document.getElementById('calib-ear-badge').textContent = '✓ 개인 측정값 적용 중';
+                document.getElementById('calib-mar-badge').textContent = '✓ 개인 측정값 적용 중';
+            } else {
+                document.getElementById('calib-ear-val').textContent = '미측정 (기본값 사용 중)';
+                document.getElementById('calib-mar-val').textContent = '미측정 (기본값 사용 중)';
+                document.getElementById('calib-ear-badge').textContent = '측정 대기';
+                document.getElementById('calib-ear-badge').style.cssText = 'font-size:0.78rem;padding:3px 10px;border-radius:12px;background:#d2992215;color:#d29922';
+                document.getElementById('calib-mar-badge').textContent = '측정 대기';
+                document.getElementById('calib-mar-badge').style.cssText = 'font-size:0.78rem;padding:3px 10px;border-radius:12px;background:#d2992215;color:#d29922';
+            }
+        } catch (e) {
+            document.getElementById('calib-ear-val').textContent = '프로그램 연결 필요';
+            document.getElementById('calib-mar-val').textContent = '프로그램 연결 필요';
+        }
+    }
+
+    document.getElementById('calib-reset-btn').addEventListener('click', async () => {
+        const btn = document.getElementById('calib-reset-btn');
+        const result = document.getElementById('calib-reset-result');
+        if (!confirm('저장된 캘리브레이션 데이터를 삭제하고 다음 실행 시 재측정합니다. 계속하시겠습니까?')) return;
+        btn.disabled = true;
+        result.textContent = '';
+        try {
+            const res = await fetch('/api/command/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ cmd: 'calib_reset' })
+            });
+            const json = await res.json();
+            if (json.success) {
+                result.textContent = '✓ 초기화됨';
+                result.className = 'save-result save-ok';
+                showToast('캘리브레이션 초기화 완료 — 카메라를 바라봐 주세요');
+                setTimeout(loadCalibStatus, 2000);
+            } else {
+                result.textContent = json.error ?? '오류';
+                result.className = 'save-result save-err';
+            }
+        } catch (e) {
+            result.textContent = '네트워크 오류';
+            result.className = 'save-result save-err';
+        } finally {
+            btn.disabled = false;
+            setTimeout(() => { result.textContent = ''; }, 3000);
+        }
+    });
+
+    loadCalibStatus();
+
+    // 사용자 프로필 로드
+    async function loadProfile() {
+        try {
+            const res = await fetch('/api/profile/');
+            const json = await res.json();
+            if (json.success && json.data.name)
+                document.getElementById('profile-name-input').value = json.data.name;
+        } catch (e) {}
+    }
+
+    document.getElementById('profile-save-btn').addEventListener('click', async () => {
+        const btn = document.getElementById('profile-save-btn');
+        const result = document.getElementById('profile-save-result');
+        const name = document.getElementById('profile-name-input').value.trim();
+        btn.disabled = true;
+        result.textContent = '';
+        try {
+            const res = await fetch('/api/profile/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name })
+            });
+            const json = await res.json();
+            if (json.success) {
+                result.textContent = '✓ 저장됨';
+                result.className = 'save-result save-ok';
+                showToast(`프로필 저장 완료: ${name}`);
+            } else {
+                result.textContent = json.error ?? '오류';
+                result.className = 'save-result save-err';
+            }
+        } catch (e) {
+            result.textContent = '네트워크 오류';
+            result.className = 'save-result save-err';
+        } finally {
+            btn.disabled = false;
+            setTimeout(() => { result.textContent = ''; }, 3000);
+        }
+    });
+
+    loadProfile();
     </script>
 </body>
 </html>

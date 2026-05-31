@@ -8,9 +8,9 @@ urlpatterns = [
     path('api/realtime/', views.api_realtime, name='api_realtime'),
     path('api/fatigue/', views.api_fatigue, name='api_fatigue'),
     path('api/logs/', views.api_logs, name='api_logs'),
-    path('api/recovery/', views.api_recovery, name='api_recovery'),
-    path('api/environment/', views.api_environment, name='api_environment'),
     path('api/daily_report/', views.api_daily_report, name='api_daily_report'),
     path('api/settings/', views.api_settings, name='api_settings'),
     path('api/command/', views.api_command, name='api_command'),
+    path('api/profile/', views.api_profile, name='api_profile'),
+    path('guides/', views.guides_page, name='guides'),
 ]

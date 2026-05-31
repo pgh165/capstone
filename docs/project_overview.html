@@ -1,0 +1,1069 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>AI 개인 맞춤형 포모도로 타이머</title>
+<style>
+:root {
+  --bg:#0d1117; --surface:#161b22; --border:#30363d;
+  --text:#e6edf3; --muted:#7d8590;
+  --blue:#58a6ff; --green:#3fb950; --yellow:#d29922;
+  --orange:#f0883e; --red:#f85149; --purple:#bc8cff; --teal:#39d353;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{width:100%;height:100%;overflow:hidden;
+  font-family:'Noto Sans KR','Segoe UI',-apple-system,sans-serif;
+  background:var(--bg);color:var(--text);}
+/* 이모지 렌더링: 별도 스택으로 분리 */
+@font-face{font-family:'Noto Color Emoji';src:local('Noto Color Emoji');unicode-range:U+1F300-1F9FF,U+2600-26FF,U+2700-27BF,U+FE00-FE0F;}
+
+/* ═══════════ 슬라이드 컨테이너 ═══════════ */
+#deck{
+  display:flex;
+  width:calc(100vw * 8);
+  height:100vh;
+  transition:transform .65s cubic-bezier(.77,0,.175,1);
+}
+.slide{
+  width:100vw;height:100vh;
+  flex-shrink:0;
+  display:flex;flex-direction:column;
+  justify-content:center;align-items:center;
+  padding:36px 48px;
+  position:relative;
+  overflow:hidden;
+}
+.slide h2{font-size:2.8rem;font-weight:800;margin-bottom:12px;text-align:center;}
+.sub{color:var(--muted);font-size:1.15rem;margin-bottom:32px;text-align:center;line-height:1.6;}
+
+/* ═══════════ 네비 ═══════════ */
+#nav{
+  position:fixed;bottom:28px;left:50%;transform:translateX(-50%);
+  display:flex;align-items:center;gap:20px;z-index:200;
+  background:rgba(22,27,34,.85);backdrop-filter:blur(10px);
+  border:1px solid var(--border);border-radius:40px;padding:10px 20px;
+}
+#nav button{
+  background:none;border:none;color:var(--muted);cursor:pointer;
+  font-size:1.1rem;padding:4px 8px;border-radius:6px;
+  transition:color .2s,background .2s;
+}
+#nav button:hover{color:var(--text);background:var(--border);}
+.dots{display:flex;gap:8px;align-items:center;}
+.dot{
+  width:8px;height:8px;border-radius:50%;
+  background:var(--border);cursor:pointer;
+  transition:background .3s,transform .3s,width .3s;
+}
+.dot.active{background:var(--blue);width:22px;border-radius:4px;}
+#slide-num{font-size:.75rem;color:var(--muted);min-width:36px;text-align:center;}
+
+/* 키보드 힌트 */
+#hint{
+  position:fixed;bottom:80px;right:28px;
+  font-size:.72rem;color:var(--muted);
+  display:flex;gap:6px;align-items:center;
+  opacity:.5;
+  transition:opacity .3s;
+}
+#hint:hover{opacity:1;}
+
+/* ═══════════ S1 히어로 ═══════════ */
+#s1{background:radial-gradient(ellipse at 50% 40%,#1a2540 0%,var(--bg) 65%);}
+.hero-title{font-size:clamp(2.6rem,5.5vw,4.4rem);font-weight:900;text-align:center;line-height:1.15;}
+.hero-title span{color:var(--blue);}
+.hero-sub{margin-top:16px;font-size:1.25rem;color:var(--muted);text-align:center;max-width:680px;line-height:1.7;}
+.badge-row{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin-top:30px;}
+.badge{padding:7px 18px;border-radius:20px;font-size:.9rem;font-weight:600;border:1px solid;}
+.badge.bl{color:var(--blue);border-color:var(--blue);background:#58a6ff15;}
+.badge.gr{color:var(--green);border-color:var(--green);background:#3fb95015;}
+.badge.pu{color:var(--purple);border-color:var(--purple);background:#bc8cff15;}
+.badge.or{color:var(--orange);border-color:var(--orange);background:#f0883e15;}
+.badge.te{color:var(--teal);border-color:var(--teal);background:#39d35315;}
+
+/* 눈 */
+.eye-row{display:flex;gap:48px;margin-top:44px;}
+.eye{width:96px;height:58px;background:var(--surface);border-radius:50%;
+  border:3px solid var(--blue);display:flex;align-items:center;justify-content:center;
+  overflow:hidden;position:relative;}
+.pupil{width:28px;height:28px;background:var(--blue);border-radius:50%;}
+.eyelid{position:absolute;top:0;left:0;width:100%;height:0;
+  background:var(--surface);animation:eyeclose 4.5s ease-in-out infinite;
+  border-bottom:2px solid var(--blue);}
+@keyframes eyeclose{0%,44%,56%,100%{height:0;}50%{height:100%;}}
+
+/* ═══════════ S2 문제 ═══════════ */
+#s2{background:var(--bg);}
+.problem-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;max-width:1020px;width:100%;}
+.pcard{background:var(--surface);border:1px solid var(--border);border-radius:18px;
+  padding:36px 28px;text-align:center;
+  opacity:0;transform:translateY(24px);
+  transition:opacity .55s,transform .55s;}
+.pcard.in{opacity:1;transform:none;}
+.pcard svg{width:64px;height:64px;margin-bottom:18px;}
+.pcard h3{font-size:1.15rem;font-weight:700;margin-bottom:10px;}
+.pcard p{font-size:.96rem;color:var(--muted);line-height:1.7;}
+
+/* ═══════════ S3 파이프라인 ═══════════ */
+#s3{background:radial-gradient(ellipse at 20% 80%,#1a2030 0%,var(--bg) 55%);}
+
+/* 전체 레이아웃: 5개 단계 컬럼 + 화살표 */
+.pipe-layout{
+  display:flex;align-items:stretch;gap:0;
+  width:100%;max-width:1200px;
+}
+
+/* 단계 컬럼 */
+.pipe-stage{
+  flex:1;display:flex;flex-direction:column;align-items:center;gap:10px;
+  opacity:0;transform:translateY(20px);
+  transition:opacity .5s,transform .5s;
+}
+.pipe-stage.in{opacity:1;transform:none;}
+.stage-label{
+  font-size:.8rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.08em;padding:5px 14px;border-radius:20px;
+  margin-bottom:6px;white-space:nowrap;
+}
+
+/* 노드 카드 */
+.pnode{
+  width:100%;background:var(--surface);border:1px solid var(--border);
+  border-radius:14px;padding:16px 10px;text-align:center;
+  transition:border-color .3s,box-shadow .3s;cursor:default;
+}
+.pnode:hover{box-shadow:0 0 16px rgba(88,166,255,.3);}
+.pnode .n-ico{font-size:2rem;line-height:1;margin-bottom:8px;}
+.pnode .n-lbl{font-size:.9rem;font-weight:700;color:var(--text);margin-bottom:4px;}
+.pnode .n-dsc{font-size:.76rem;color:var(--muted);line-height:1.55;}
+
+/* 색상 변형 */
+.pnode.bl{border-color:var(--blue);}
+.pnode.gr{border-color:var(--green);}
+.pnode.pu{border-color:var(--purple);}
+.pnode.or{border-color:var(--orange);}
+.pnode.re{border-color:var(--red);}
+.pnode.te{border-color:var(--teal);}
+.pnode.ye{border-color:var(--yellow);}
+
+.stage-label.bl{background:#58a6ff18;color:var(--blue);}
+.stage-label.gr{background:#3fb95018;color:var(--green);}
+.stage-label.pu{background:#bc8cff18;color:var(--purple);}
+.stage-label.or{background:#f0883e18;color:var(--orange);}
+.stage-label.re{background:#f8514918;color:var(--red);}
+
+/* 단계 사이 화살표 */
+.pipe-arr{
+  display:flex;align-items:center;justify-content:center;
+  width:44px;flex-shrink:0;align-self:center;
+  opacity:0;transition:opacity .4s;
+}
+.pipe-arr.in{opacity:1;}
+.pipe-arr svg{overflow:visible;}
+
+/* 빈 공간 (노드 높이 맞춤용) */
+.pnode-ghost{
+  width:100%;border-radius:12px;padding:12px 8px;
+  background:transparent;border:1px dashed var(--border);
+  text-align:center;font-size:.64rem;color:var(--muted);
+  display:flex;align-items:center;justify-content:center;
+}
+
+/* 피드백 화살표 (AIJudge ↔ Judge) */
+.feedback-badge{
+  font-size:.6rem;color:var(--orange);background:#f0883e15;
+  border:1px solid var(--orange);border-radius:10px;
+  padding:2px 7px;margin-top:4px;text-align:center;
+  opacity:0;transition:opacity .4s;
+}
+
+/* ═══════════ S4 졸음 점수 ═══════════ */
+#s4{background:var(--bg);}
+.score-demo{display:flex;gap:48px;flex-wrap:wrap;justify-content:center;align-items:flex-start;max-width:1100px;width:100%;}
+.gauge-wrap{text-align:center;}
+.gauge-wrap h3{font-size:1rem;color:var(--muted);margin-bottom:16px;}
+.score-bars{flex:1;min-width:280px;}
+.sbar-row{display:flex;align-items:center;gap:12px;margin-bottom:14px;}
+.sbar-lbl{width:72px;font-size:.9rem;color:var(--muted);text-align:right;}
+.sbar-track{flex:1;height:12px;background:var(--surface);border-radius:6px;overflow:hidden;}
+.sbar-fill{height:100%;border-radius:6px;width:0;transition:width 1.1s cubic-bezier(.4,0,.2,1);}
+.sbar-val{width:36px;font-size:.9rem;font-weight:600;text-align:right;}
+.level-table{width:100%;max-width:380px;}
+.lrow{display:flex;align-items:center;gap:14px;padding:11px 14px;border-radius:9px;
+  margin-bottom:6px;opacity:0;transform:translateX(-16px);
+  transition:opacity .45s,transform .45s,background .3s;}
+.lrow.in{opacity:1;transform:none;}
+.lrow.active{background:var(--surface);}
+.ldot{width:13px;height:13px;border-radius:50%;flex-shrink:0;}
+.lrange{font-size:.88rem;color:var(--muted);width:66px;}
+.llabel{font-size:.96rem;font-weight:600;}
+.ldesc{font-size:.84rem;color:var(--muted);margin-left:auto;}
+
+/* ═══════════ S5 포모도로 ═══════════ */
+#s5{background:radial-gradient(ellipse at 80% 20%,#1a2030 0%,var(--bg) 55%);}
+.pomo-demo{display:flex;gap:52px;flex-wrap:wrap;justify-content:center;align-items:flex-start;max-width:1060px;width:100%;}
+.pomo-clock{width:240px;height:240px;border-radius:50%;border:none;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  margin:0 auto 16px;background:var(--surface);position:relative;
+  box-shadow:0 0 50px #58a6ff22;}
+.pomo-ring-svg{position:absolute;top:-5px;left:-5px;width:250px;height:250px;}
+.pomo-time{font-size:3.2rem;font-weight:700;font-family:monospace;color:var(--blue);}
+.pomo-st{font-size:1rem;color:var(--muted);margin-top:4px;}
+.ibar-row{display:flex;align-items:center;gap:12px;margin-bottom:14px;}
+.ibar-cond{font-size:.95rem;color:var(--muted);width:136px;flex-shrink:0;}
+.ibar-track{flex:1;height:11px;background:var(--surface);border-radius:6px;overflow:hidden;}
+.ibar-fill{height:100%;border-radius:6px;width:0;transition:width 1.3s cubic-bezier(.4,0,.2,1);}
+.ibar-min{font-size:.93rem;font-weight:600;width:40px;text-align:right;}
+
+/* ═══════════ S6 개인화 ═══════════ */
+#s6{background:var(--bg);}
+.feat-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:22px;max-width:980px;width:100%;}
+.fcard{background:var(--surface);border:1px solid var(--border);border-radius:18px;
+  padding:30px 28px;opacity:0;transform:translateY(18px);
+  transition:opacity .5s,transform .5s,border-color .3s;}
+.fcard.in{opacity:1;transform:none;}
+.fcard:hover{border-color:var(--blue);}
+.f-ico{font-size:2.4rem;margin-bottom:12px;}
+.f-title{font-size:1.1rem;font-weight:700;margin-bottom:9px;}
+.f-desc{font-size:.94rem;color:var(--muted);line-height:1.75;}
+.f-tag{display:inline-block;margin-top:10px;padding:4px 13px;
+  background:#58a6ff15;color:var(--blue);border-radius:20px;font-size:.8rem;font-weight:600;}
+
+/* ═══════════ S7 아키텍처 (스텝 애니메이션) ═══════════ */
+#s7{background:radial-gradient(ellipse at 50% 50%,#161b30 0%,var(--bg) 65%);
+  padding:32px 48px 90px;}
+.arch-wrap{max-width:1160px;width:100%;position:relative;}
+
+/* 노드 기본: 흐림 처리 */
+.an{transition:opacity .35s,filter .35s;}
+.an.dim{opacity:.18;filter:none;}
+.an.lit{opacity:1;}
+
+/* 활성 노드 발광 */
+@keyframes nodeGlow{
+  0%,100%{filter:drop-shadow(0 0 0 transparent);}
+  50%{filter:drop-shadow(0 0 10px var(--glow-col,#fff));}
+}
+.an.lit.glow{animation:nodeGlow 1.2s ease-in-out infinite;}
+
+/* 화살표 기본 */
+.aa{transition:opacity .35s;}
+.aa.dim{opacity:.1;}
+.aa.lit{opacity:1;}
+
+/* 흐르는 화살표 애니메이션 */
+.aa.flow{
+  stroke-dasharray:8 6;
+  animation:flowDash .7s linear infinite;
+}
+@keyframes flowDash{to{stroke-dashoffset:-28;}}
+
+/* 스텝 바 */
+#step-bar{
+  position:absolute;bottom:-68px;left:0;right:0;
+  background:var(--surface);border:1px solid var(--border);border-radius:14px;
+  padding:12px 20px;display:flex;align-items:center;gap:18px;
+}
+#step-badge{
+  font-size:.84rem;font-weight:700;padding:5px 14px;border-radius:20px;
+  white-space:nowrap;min-width:96px;text-align:center;
+  transition:background .3s,color .3s;
+}
+#step-desc{font-size:.95rem;flex:1;line-height:1.5;}
+#step-desc b{color:var(--text);}
+.step-dots{display:flex;gap:6px;margin-left:auto;}
+.sdot{width:9px;height:9px;border-radius:50%;background:var(--border);
+  cursor:pointer;transition:background .3s,transform .2s;}
+.sdot.on{transform:scale(1.5);}
+#step-ctrl{display:flex;gap:6px;}
+#step-ctrl button{
+  background:var(--border);border:none;color:var(--text);
+  border-radius:6px;padding:6px 14px;font-size:.86rem;cursor:pointer;
+  transition:background .2s;
+}
+#step-ctrl button:hover{background:#444;}
+
+/* ═══════════ S8 기술스택 ═══════════ */
+#s8{background:var(--bg);}
+.stack-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;max-width:980px;width:100%;}
+.scard{background:var(--surface);border:1px solid var(--border);border-radius:14px;
+  padding:24px;opacity:0;transform:scale(.92);
+  transition:opacity .45s,transform .45s;}
+.scard.in{opacity:1;transform:scale(1);}
+.scat{font-size:.82rem;color:var(--muted);font-weight:600;
+  text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px;}
+.sitems{display:flex;flex-wrap:wrap;gap:7px;}
+.sitem{padding:5px 12px;border-radius:7px;font-size:.88rem;font-weight:500;background:var(--bg);}
+</style>
+</head>
+<body>
+
+<!-- 슬라이드 덱 -->
+<div id="deck">
+
+<!-- ══ S1 표지 ══ -->
+<div class="slide" id="s1" style="background:radial-gradient(ellipse at 50% 50%,#1a2540 0%,var(--bg) 70%);">
+  <div style="text-align:center;display:flex;flex-direction:column;align-items:center;gap:28px;">
+    <h1 style="font-size:clamp(2.2rem,5vw,3.8rem);font-weight:900;line-height:1.2;text-align:center;">
+      AI 개인 맞춤형<br><span style="color:var(--blue);">포모도로 타이머</span>
+    </h1>
+    <div style="width:60px;height:2px;background:var(--border);border-radius:2px;"></div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:12px;font-size:1.15rem;color:var(--muted);line-height:2;">
+      <span style="color:var(--text);font-weight:600;font-size:1.2rem;">군산대학교 임베디드 소프트웨어학과</span>
+      <span>2001189 &nbsp;&nbsp; 박지호</span>
+    </div>
+  </div>
+</div>
+
+<!-- ══ S2 문제 ══ -->
+<div class="slide" id="s2">
+  <h2>일반적인 포모도로 타이머와 차이점</h2>
+  <p class="sub">이 시스템이 해결해주는 세 가지 문제</p>
+  <div class="problem-grid">
+    <div class="pcard">
+      <svg viewBox="0 0 52 52" fill="none">
+        <circle cx="26" cy="26" r="22" stroke="#3fb950" stroke-width="2"/>
+        <ellipse cx="18" cy="24" rx="5" ry="4" fill="#3fb95022" stroke="#3fb950" stroke-width="1.5"/>
+        <ellipse cx="34" cy="24" rx="5" ry="4" fill="#3fb95022" stroke="#3fb950" stroke-width="1.5"/>
+        <circle cx="18" cy="24" r="2" fill="#3fb950"/>
+        <circle cx="34" cy="24" r="2" fill="#3fb950"/>
+        <path d="M16 36 Q26 42 36 36" stroke="#3fb950" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+        <circle cx="44" cy="10" r="7" fill="#3fb950"/>
+        <text x="44" y="14" text-anchor="middle" font-size="9" fill="white" font-weight="bold" font-family="sans-serif">!</text>
+      </svg>
+      <h3>졸음 상태를 즉시 감지해 알려줌</h3>
+      <p>눈이 감기거나 고개가 숙여지는 순간 웹캠이 자동으로 감지하고 즉시 TTS로 알려줍니다</p>
+    </div>
+    <div class="pcard" style="transition-delay:.13s">
+      <svg viewBox="0 0 52 52" fill="none">
+        <rect x="6" y="10" width="40" height="28" rx="4" stroke="#d29922" stroke-width="2"/>
+        <text x="26" y="28" text-anchor="middle" font-size="9" fill="#d29922" font-family="monospace" font-weight="bold">25:00</text>
+        <line x1="26" y1="38" x2="26" y2="44" stroke="#d29922" stroke-width="2"/>
+        <line x1="18" y1="44" x2="34" y2="44" stroke="#d29922" stroke-width="2"/>
+        <line x1="40" y1="8" x2="44" y2="4" stroke="#f85149" stroke-width="2" stroke-linecap="round"/>
+        <circle cx="46" cy="3" r="2.5" fill="#f85149"/>
+      </svg>
+      <h3>모두에게 같은 25분</h3>
+      <p>컨디션이 좋은 날도, 피곤한 날도 똑같이 25분입니다. 지금 내 상태는 반영되지 않습니다</p>
+    </div>
+    <div class="pcard" style="transition-delay:.26s">
+      <svg viewBox="0 0 52 52" fill="none">
+        <circle cx="26" cy="26" r="14" stroke="#bc8cff" stroke-width="2"/>
+        <path d="M26 18 L26 26 L32 30" stroke="#bc8cff" stroke-width="2" stroke-linecap="round"/>
+        <path d="M10 10 L16 16 M42 10 L36 16 M10 42 L16 36 M42 42 L36 36" stroke="#bc8cff" stroke-width="1.5" stroke-linecap="round"/>
+      </svg>
+      <h3>피로 수준에 맞지 않는 휴식</h3>
+      <p>가볍게 피곤할 땐 스트레칭으로 충분하고, 많이 쌓였을 땐 충분한 휴식이 필요합니다. 지금 얼마나 피곤한지를 알아야 맞는 방법을 찾을 수 있습니다</p>
+    </div>
+  </div>
+</div>
+
+<!-- ══ S3 파이프라인 ══ -->
+<div class="slide" id="s3">
+  <h2>처리 파이프라인</h2>
+  <p class="sub" style="margin-bottom:24px">웹캠 영상에서 TTS 경보까지 — 전체 흐름 한눈에</p>
+
+  <div class="pipe-layout">
+
+    <!-- ① 입력 -->
+    <div class="pipe-stage" id="ps1">
+      <span class="stage-label bl">① 입력</span>
+      <div class="pnode bl">
+        <div class="n-ico">📷</div>
+        <div class="n-lbl">USB 웹캠</div>
+        <div class="n-dsc">640×480<br>30fps MJPEG<br>/dev/video0</div>
+      </div>
+      <div class="pnode bl">
+        <div class="n-ico">🎞️</div>
+        <div class="n-lbl">ffmpeg</div>
+        <div class="n-dsc">BGR 프레임<br>subprocess<br>파이프 스트림</div>
+      </div>
+    </div>
+
+    <div class="pipe-arr" id="pa1">
+      <svg width="28" height="24" viewBox="0 0 28 24">
+        <line x1="2" y1="12" x2="22" y2="12" stroke="#58a6ff" stroke-width="2"/>
+        <polyline points="16,6 24,12 16,18" fill="none" stroke="#58a6ff" stroke-width="2" stroke-linejoin="round"/>
+      </svg>
+    </div>
+
+    <!-- ② 얼굴 감지 -->
+    <div class="pipe-stage" id="ps2">
+      <span class="stage-label gr">② 얼굴 감지</span>
+      <div class="pnode gr">
+        <div class="n-ico">🤖</div>
+        <div class="n-lbl">MediaPipe</div>
+        <div class="n-dsc">FaceLandmarker<br>468 랜드마크<br>신뢰도 0.3</div>
+      </div>
+      <div class="pnode te">
+        <div class="n-ico">📐</div>
+        <div class="n-lbl">캘리브레이션</div>
+        <div class="n-dsc">세션 초반 30초<br>EAR×0.75<br>MAR×3.0 자동 보정</div>
+      </div>
+    </div>
+
+    <div class="pipe-arr" id="pa2">
+      <svg width="28" height="24" viewBox="0 0 28 24">
+        <line x1="2" y1="12" x2="22" y2="12" stroke="#3fb950" stroke-width="2"/>
+        <polyline points="16,6 24,12 16,18" fill="none" stroke="#3fb950" stroke-width="2" stroke-linejoin="round"/>
+      </svg>
+    </div>
+
+    <!-- ③ 생체 분석 -->
+    <div class="pipe-stage" id="ps3">
+      <span class="stage-label gr">③ 생체 분석</span>
+      <div class="pnode gr">
+        <div class="n-ico">👁️</div>
+        <div class="n-lbl">EAR / MAR</div>
+        <div class="n-dsc">PERCLOS 60초<br>하품 0.8s 지속<br>개인 임계값 적용</div>
+      </div>
+      <div class="pnode pu">
+        <div class="n-ico">🙇</div>
+        <div class="n-lbl">Head Pose</div>
+        <div class="n-dsc">Pitch · Roll<br>solvePnP<br>5초 지속 보너스</div>
+      </div>
+    </div>
+
+    <div class="pipe-arr" id="pa3">
+      <svg width="28" height="24" viewBox="0 0 28 24">
+        <line x1="2" y1="12" x2="22" y2="12" stroke="#bc8cff" stroke-width="2"/>
+        <polyline points="16,6 24,12 16,18" fill="none" stroke="#bc8cff" stroke-width="2" stroke-linejoin="round"/>
+      </svg>
+    </div>
+
+    <!-- ④ 점수 산출 -->
+    <div class="pipe-stage" id="ps4">
+      <span class="stage-label pu">④ 점수 산출</span>
+      <div class="pnode pu">
+        <div class="n-ico">📊</div>
+        <div class="n-lbl">Judge</div>
+        <div class="n-dsc">EMA α=0.25<br>x^1.5 / 10<br>W1=.50 W2=.25 W3=.25</div>
+      </div>
+      <div class="pnode or">
+        <div class="n-ico">🧠</div>
+        <div class="n-lbl">AIJudge</div>
+        <div class="n-dsc">gemma4:e4b<br>5초 비동기<br>캘리브 후 시작</div>
+      </div>
+      <div class="feedback-badge" id="fb-badge">⟷ 편차 30↑ → 중간값</div>
+    </div>
+
+    <div class="pipe-arr" id="pa4">
+      <svg width="28" height="24" viewBox="0 0 28 24">
+        <line x1="2" y1="12" x2="22" y2="12" stroke="#f85149" stroke-width="2"/>
+        <polyline points="16,6 24,12 16,18" fill="none" stroke="#f85149" stroke-width="2" stroke-linejoin="round"/>
+      </svg>
+    </div>
+
+    <!-- ⑤ 출력 -->
+    <div class="pipe-stage" id="ps5">
+      <span class="stage-label re">⑤ 출력</span>
+      <div class="pnode re">
+        <div class="n-ico">🍅</div>
+        <div class="n-lbl">Pomodoro</div>
+        <div class="n-dsc">10~40분 동적<br>수동 리셋 40분<br>휴식 중 경고↓</div>
+      </div>
+      <div class="pnode te">
+        <div class="n-ico">🔊</div>
+        <div class="n-lbl">TTS / 경보</div>
+        <div class="n-dsc">MeloTTS<br>LLM 코칭 음성<br>히스테리시스</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ══ S4 졸음 점수 ══ -->
+<div class="slide" id="s4">
+  <h2>졸음 점수 산출</h2>
+  <p class="sub">세 가지 생체 신호를 가중 합산 후 비선형 변환</p>
+  <div class="score-demo">
+    <div class="gauge-wrap">
+      <h3>종합 졸음 점수</h3>
+      <svg width="260" height="168" viewBox="0 0 200 130">
+        <defs>
+          <linearGradient id="gGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stop-color="#3fb950"/>
+            <stop offset="40%" stop-color="#d29922"/>
+            <stop offset="70%" stop-color="#f0883e"/>
+            <stop offset="100%" stop-color="#f85149"/>
+          </linearGradient>
+        </defs>
+        <path d="M20 110 A90 90 0 0 1 180 110" fill="none" stroke="#30363d" stroke-width="14" stroke-linecap="round"/>
+        <path id="garc" d="M20 110 A90 90 0 0 1 180 110" fill="none" stroke="url(#gGrad)" stroke-width="14" stroke-linecap="round" stroke-dasharray="283" stroke-dashoffset="283" style="transition:stroke-dashoffset 1s ease"/>
+        <text id="gnum" x="100" y="100" text-anchor="middle" font-size="30" font-weight="700" fill="#e6edf3">0</text>
+        <text x="100" y="120" text-anchor="middle" font-size="10" fill="#7d8590">/ 100</text>
+      </svg>
+      <div style="font-size:.92rem;color:var(--muted);line-height:2.1">
+        W₁=0.50 눈감김 &nbsp;|&nbsp; W₂=0.25 하품 &nbsp;|&nbsp; W₃=0.25 고개<br>
+        <span style="font-size:.82rem;opacity:.7">raw^1.5 / 10 → EMA(α=0.25)</span>
+      </div>
+    </div>
+    <div class="score-bars">
+      <h3 style="font-size:1rem;color:var(--muted);margin-bottom:16px">신호별 기여도</h3>
+      <div class="sbar-row"><span class="sbar-lbl">PERCLOS</span><div class="sbar-track"><div class="sbar-fill" id="bear" style="background:var(--blue)"></div></div><span class="sbar-val" id="vear" style="color:var(--blue)">0</span></div>
+      <div class="sbar-row"><span class="sbar-lbl">하품</span><div class="sbar-track"><div class="sbar-fill" id="bmar" style="background:var(--orange)"></div></div><span class="sbar-val" id="vmar" style="color:var(--orange)">0</span></div>
+      <div class="sbar-row"><span class="sbar-lbl">고개각도</span><div class="sbar-track"><div class="sbar-fill" id="bhead" style="background:var(--purple)"></div></div><span class="sbar-val" id="vhead" style="color:var(--purple)">0</span></div>
+      <div style="height:1px;background:var(--border);margin:8px 0"></div>
+      <div class="sbar-row"><span class="sbar-lbl" style="color:var(--text);font-weight:600">종합</span><div class="sbar-track"><div class="sbar-fill" id="btotal" style="background:linear-gradient(90deg,var(--green),var(--red))"></div></div><span class="sbar-val" id="vtotal" style="color:var(--text);font-weight:600">0</span></div>
+    </div>
+    <div class="level-table">
+      <h3 style="font-size:1rem;color:var(--muted);margin-bottom:16px">경고 단계</h3>
+      <div class="lrow" id="lv0"><div class="ldot" style="background:var(--green)"></div><span class="lrange">0 ~ 20</span><span class="llabel" style="color:var(--green)">정상 L0</span><span class="ldesc">측정 중</span></div>
+      <div class="lrow" id="lv1"><div class="ldot" style="background:var(--yellow)"></div><span class="lrange">21 ~ 45</span><span class="llabel" style="color:var(--yellow)">주의 L1</span><span class="ldesc">TTS 안내</span></div>
+      <div class="lrow" id="lv2"><div class="ldot" style="background:var(--orange)"></div><span class="lrange">46 ~ 65</span><span class="llabel" style="color:var(--orange)">경고 L2</span><span class="ldesc">휴식 권유</span></div>
+      <div class="lrow" id="lv3"><div class="ldot" style="background:var(--red)"></div><span class="lrange">66 ~100</span><span class="llabel" style="color:var(--red)">위험 L3</span><span class="ldesc">즉시 휴식</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ S5 포모도로 ══ -->
+<div class="slide" id="s5">
+  <h2>🍅 AI 동적 포모도로</h2>
+  <p class="sub">피로·졸음 점수에 따라 작업 인터벌이 실시간으로 달라집니다</p>
+  <div class="pomo-demo">
+    <div style="text-align:center">
+      <div class="pomo-clock">
+        <!-- viewBox=250×250, cx/cy=125, r=117 (clock 240px, border 5px → border center = 120-2.5=117.5≈117) -->
+        <!-- circumference = 2π×117 ≈ 735 -->
+        <svg class="pomo-ring-svg" viewBox="0 0 250 250">
+          <circle cx="125" cy="125" r="117" fill="none" stroke="#1c3a5e" stroke-width="5"/>
+          <circle id="pring" cx="125" cy="125" r="117" fill="none" stroke="#58a6ff" stroke-width="5"
+            stroke-dasharray="735" stroke-dashoffset="0"
+            transform="rotate(-90 125 125)" style="transition:stroke-dashoffset 1s linear,stroke .5s"/>
+        </svg>
+        <div class="pomo-time" id="ptime">35:00</div>
+        <div class="pomo-st" id="pst">집중 중</div>
+      </div>
+      <div style="font-size:.95rem;color:var(--muted)" id="plbl">작업 1 · 40분 인터벌</div>
+    </div>
+    <div style="flex:1;min-width:320px">
+      <h3 style="font-size:1.1rem;color:var(--muted);margin-bottom:20px">피로도 × 졸음 → 인터벌</h3>
+      <div style="margin-bottom:20px">
+        <div style="font-size:.9rem;color:var(--muted);margin-bottom:10px;font-weight:600">컨디션 좋음</div>
+        <div class="ibar-row"><span class="ibar-cond">기본 (25분 기준)</span><div class="ibar-track"><div class="ibar-fill" data-w="62.5" style="background:var(--blue)"></div></div><span class="ibar-min" style="color:var(--blue)">25분</span></div>
+        <div class="ibar-row"><span class="ibar-cond">최대 연장</span><div class="ibar-track"><div class="ibar-fill" data-w="100" style="background:var(--green)"></div></div><span class="ibar-min" style="color:var(--green)">40분</span></div>
+      </div>
+      <div style="margin-bottom:20px">
+        <div style="font-size:.9rem;color:var(--muted);margin-bottom:10px;font-weight:600">피로·졸음 감지</div>
+        <div class="ibar-row"><span class="ibar-cond">피로 경고 수준</span><div class="ibar-track"><div class="ibar-fill" data-w="42.5" style="background:var(--orange)"></div></div><span class="ibar-min" style="color:var(--orange)">17분</span></div>
+        <div class="ibar-row"><span class="ibar-cond">최소 단축</span><div class="ibar-track"><div class="ibar-fill" data-w="25" style="background:var(--red)"></div></div><span class="ibar-min" style="color:var(--red)">10분</span></div>
+      </div>
+      <div style="padding:16px;background:var(--surface);border-radius:12px;border:1px solid var(--border);font-size:.9rem;color:var(--muted);line-height:2.1">
+        <div>📊 <b style="color:var(--text)">시간대 패턴 학습</b> — 오후 3시에 늘 졸리면 미리 인터벌 조정</div>
+        <div>🔄 <b style="color:var(--text)">수동 리셋</b> — 버튼 한 번으로 40분 타이머 초기화</div>
+        <div>🛋️ <b style="color:var(--text)">피로도 기반 자동 휴식</b> — 피로가 많이 쌓이면 휴식으로 전환</div>
+        <div>🔕 <b style="color:var(--text)">휴식 중 알람 없음</b> — 쉬는 동안은 방해 없이 온전히 휴식</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ S6 개인화 ══ -->
+<div class="slide" id="s6">
+  <h2>개인화 4단계</h2>
+  <p class="sub">처음부터 나에게 맞춰지는 시스템</p>
+  <div class="feat-grid">
+    <div class="fcard"><div class="f-ico">📐</div><div class="f-title">EAR/MAR 캘리브레이션</div><div class="f-desc">세션 시작 후 30초간 기준값을 자동 측정합니다. 눈이 작거나 입이 크더라도 개인 비율로 보정되어 오탐·누락 없이 감지합니다.</div><span class="f-tag">EAR × 0.75 · MAR × 3.0</span></div>
+    <div class="fcard" style="transition-delay:.1s"><div class="f-ico">💬</div><div class="f-title">LLM 개인화 코칭</div><div class="f-desc">gemma4:26b가 피로 원인, 작업 시간, 졸음 횟수를 분석해 3~4문장 한국어 코칭 메시지를 생성하고 MeloTTS로 음성 출력합니다.</div><span class="f-tag">5분 쿨다운 · 로컬 추론</span></div>
+    <div class="fcard" style="transition-delay:.2s"><div class="f-ico">📈</div><div class="f-title">시간대별 피로 패턴</div><div class="f-desc">매일 쌓이는 피로 데이터를 시간대별로 분석해 오후 2시에 항상 졸린다면 그 시간대 작업 인터벌을 미리 단축합니다.</div><span class="f-tag">3샘플 이상 · DB 자동 학습</span></div>
+    <div class="fcard" style="transition-delay:.3s"><div class="f-ico">🎯</div><div class="f-title">개인 최적 인터벌 학습</div><div class="f-desc">피로가 경고 수준에 도달하기 직전 평균 작업 시간을 누적 학습해 다음 세션 기준 인터벌로 적용합니다. 5회 이상 후 활성화.</div><span class="f-tag">평균 × 0.85 · 5회 이상</span></div>
+  </div>
+</div>
+
+<!-- ══ S7 아키텍처 (스텝 애니메이션) ══ -->
+<div class="slide" id="s7">
+  <h2>시스템 아키텍처</h2>
+  <p class="sub" style="margin-bottom:14px">처리 흐름을 단계별로 따라가 보세요</p>
+  <div class="arch-wrap">
+    <svg id="arch-svg" viewBox="0 0 1060 374" style="width:100%" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="mb" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3z" fill="#58a6ff"/></marker>
+        <marker id="mg" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3z" fill="#3fb950"/></marker>
+        <marker id="mt" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3z" fill="#39d353"/></marker>
+        <marker id="mp2" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3z" fill="#bc8cff"/></marker>
+        <marker id="mo" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3z" fill="#f0883e"/></marker>
+        <marker id="mr" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3z" fill="#f85149"/></marker>
+      </defs>
+
+      <!-- 구역 배경 -->
+      <rect x="2" y="4" width="654" height="366" rx="14" fill="#0d111700" stroke="#30363d" stroke-width="1" stroke-dasharray="6 3"/>
+      <text x="14" y="20" font-size="11" fill="#4a5568" font-family="Noto Sans KR, Noto Color Emoji, sans-serif" font-weight="600">WSL2 Ubuntu 24.04</text>
+      <rect x="664" y="4" width="392" height="366" rx="14" fill="#0d111700" stroke="#30363d" stroke-width="1" stroke-dasharray="6 3"/>
+      <text x="676" y="20" font-size="11" fill="#4a5568" font-family="Noto Sans KR, Noto Color Emoji, sans-serif" font-weight="600">Docker Compose</text>
+
+      <!-- 행 라벨 배경 -->
+      <rect x="4" y="26" width="650" height="88" rx="8" fill="#58a6ff07"/>
+      <text x="14" y="42" font-size="10" fill="#58a6ff99" font-family="Noto Sans KR, Noto Color Emoji, sans-serif" font-weight="700">① 입력</text>
+      <rect x="4" y="124" width="650" height="132" rx="8" fill="#3fb95007"/>
+      <text x="14" y="140" font-size="10" fill="#3fb95099" font-family="Noto Sans KR, Noto Color Emoji, sans-serif" font-weight="700">② 분석 · 판단</text>
+      <rect x="4" y="266" width="650" height="98" rx="8" fill="#f8514907"/>
+      <text x="14" y="282" font-size="10" fill="#f8514999" font-family="Noto Sans KR, Noto Color Emoji, sans-serif" font-weight="700">③ 출력</text>
+
+      <!-- ROW 1: 입력 -->
+      <g class="an lit" id="an-cam" style="--glow-col:#58a6ff">
+        <rect x="10" y="30" width="128" height="68" rx="10" fill="#0d1117" stroke="#58a6ff" stroke-width="2"/>
+        <text x="74" y="53" text-anchor="middle" font-size="20" font-family="Noto Sans KR, Noto Color Emoji, sans-serif">📷</text>
+        <text x="74" y="73" text-anchor="middle" font-size="13" fill="#58a6ff" font-family="Noto Sans KR, Noto Color Emoji, sans-serif" font-weight="700">USB 웹캠</text>
+        <text x="74" y="88" text-anchor="middle" font-size="10" fill="#7d8590" font-family="Noto Sans KR, Noto Color Emoji, sans-serif">/dev/video0</text>
+      </g>
+      <g class="an lit" id="an-ff" style="--glow-col:#58a6ff">
+        <rect x="152" y="30" width="128" height="68" rx="10" fill="#0d1117" stroke="#58a6ff" stroke-width="2"/>
+        <text x="216" y="53" text-anchor="middle" font-size="20" font-family="Noto Sans KR, Noto Color Emoji, sans-serif">🎞️</text>
+        <text x="216" y="73" text-anchor="middle" font-size="13" fill="#58a6ff" font-family="Noto Sans KR, Noto Color Emoji, sans-serif" font-weight="700">ffmpeg</text>
+        <text x="216" y="88" text-anchor="middle" font-size="10" fill="#7d8590" font-family="Noto Sans KR, Noto Color Emoji, sans-serif">BGR 30fps</text>
+      </g>
+      <g class="an lit" id="an-mp" style="--glow-col:#3fb950">
+        <rect x="294" y="30" width="158" height="68" rx="10" fill="#0d1117" stroke="#3fb950" stroke-width="2"/>
+        <text x="373" y="53" text-anchor="middle" font-size="20" font-family="Noto Sans KR, Noto Color Emoji, sans-serif">🤖</text>
+        <text x="373" y="73" text-anchor="middle" font-size="13" fill="#3fb950" font-family="Noto Sans KR, Noto Color Emoji, sans-serif" font-weight="700">MediaPipe</text>
+        <text x="373" y="88" text-anchor="middle" font-size="10" fill="#7d8590" font-family="Noto Sans KR, Noto Color Emoji, sans-serif">FaceLandmark · 신뢰도 0.3</text>
+      </g>
+
+      <!-- ROW 2: 분석 + 판단 -->
+      <g class="an lit" id="an-cal" style="--glow-col:#39d353">
+        <rect x="10" y="128" width="140" height="68" rx="10" fill="#0d1117" stroke="#39d353" stroke-width="2"/>
+        <text x="80" y="151" text-anchor="middle" font-size="20" font-family="Noto Sans KR, Noto Color Emoji, sans-serif">📐</text>
+        <text x="80" y="171" text-anchor="middle" font-size="12" fill="#39d353" font-family="Noto Sans KR, Noto Color Emoji, sans-serif" font-weight="700">캘리브레이션</text>
+        <text x="80" y="187" text-anchor="middle" font-size="10" fill="#7d8590" font-family="Noto Sans KR, Noto Color Emoji, sans-serif">EAR×0.75 · MAR×3.0</text>
+      </g>
+      <g class="an lit" id="an-ear" style="--glow-col:#3fb950">
+        <rect x="164" y="108" width="136" height="68" rx="10" fill="#0d1117" stroke="#3fb950" stroke-width="2"/>
+        <text x="232" y="131" text-anchor="middle" font-size="20" font-family="Noto Sans KR, Noto Color Emoji, sans-serif">👁️</text>
+        <text x="232" y="151" text-anchor="middle" font-size="12" fill="#3fb950" font-family="Noto Sans KR, Noto Color Emoji, sans-serif" font-weight="700">EAR / MAR</text>
+        <text x="232" y="167" text-anchor="middle" font-size="10" fill="#7d8590" font-family="Noto Sans KR, Noto Color Emoji, sans-serif">PERCLOS · 하품 0.8s</text>
+      </g>
+      <g class="an lit" id="an-hp" style="--glow-col:#bc8cff">
+        <rect x="164" y="192" width="136" height="68" rx="10" fill="#0d1117" stroke="#bc8cff" stroke-width="2"/>
+        <text x="232" y="215" text-anchor="middle" font-size="20" font-family="Noto Sans KR, Noto Color Emoji, sans-serif">🙇</text>
+        <text x="232" y="235" text-anchor="middle" font-size="12" fill="#bc8cff" font-family="Noto Sans KR, Noto Color Emoji, sans-serif" font-weight="700">Head Pose</text>
+        <text x="232" y="251" text-anchor="middle" font-size="10" fill="#7d8590" font-family="Noto Sans KR, Noto Color Emoji, sans-serif">Pitch/Roll · 5초 보너스</text>
+      </g>
+      <g class="an lit" id="an-jg" style="--glow-col:#bc8cff">
+        <rect x="316" y="146" width="150" height="68" rx="10" fill="#0d1117" stroke="#bc8cff" stroke-width="2.5"/>
+        <text x="391" y="169" text-anchor="middle" font-size="20" font-family="Noto Sans KR, Noto Color Emoji, sans-serif">📊</text>
+        <text x="391" y="189" text-anchor="middle" font-size="13" fill="#bc8cff" font-family="Noto Sans KR, Noto Color Emoji, sans-serif" font-weight="700">Judge</text>
+        <text x="391" y="205" text-anchor="middle" font-size="10" fill="#7d8590" font-family="Noto Sans KR, Noto Color Emoji, sans-serif">EMA · x^1.5/10</text>
+      </g>
+      <g class="an lit" id="an-ai" style="--glow-col:#f0883e">
+        <rect x="480" y="146" width="150" height="68" rx="10" fill="#0d1117" stroke="#f0883e" stroke-width="2"/>
+        <text x="555" y="169" text-anchor="middle" font-size="20" font-family="Noto Sans KR, Noto Color Emoji, sans-serif">🧠</text>
+        <text x="555" y="189" text-anchor="middle" font-size="13" fill="#f0883e" font-family="Noto Sans KR, Noto Color Emoji, sans-serif" font-weight="700">AIJudge</text>
+        <text x="555" y="205" text-anchor="middle" font-size="10" fill="#7d8590" font-family="Noto Sans KR, Noto Color Emoji, sans-serif">gemma4:e4b · 5초</text>
+      </g>
+
+      <!-- ROW 3: 출력 -->
+      <g class="an lit" id="an-fm" style="--glow-col:#f0883e">
+        <rect x="10" y="270" width="140" height="68" rx="10" fill="#0d1117" stroke="#f0883e" stroke-width="2"/>
+        <text x="80" y="293" text-anchor="middle" font-size="20" font-family="Noto Sans KR, Noto Color Emoji, sans-serif">😴</text>
+        <text x="80" y="313" text-anchor="middle" font-size="12" fill="#f0883e" font-family="Noto Sans KR, Noto Color Emoji, sans-serif" font-weight="700">FatigueMgr</text>
+        <text x="80" y="329" text-anchor="middle" font-size="10" fill="#7d8590" font-family="Noto Sans KR, Noto Color Emoji, sans-serif">4단계 피로도</text>
+      </g>
+      <g class="an lit" id="an-pm" style="--glow-col:#f85149">
+        <rect x="164" y="270" width="140" height="68" rx="10" fill="#0d1117" stroke="#f85149" stroke-width="2.5"/>
+        <text x="234" y="293" text-anchor="middle" font-size="20" font-family="Noto Sans KR, Noto Color Emoji, sans-serif">🍅</text>
+        <text x="234" y="313" text-anchor="middle" font-size="13" fill="#f85149" font-family="Noto Sans KR, Noto Color Emoji, sans-serif" font-weight="700">Pomodoro</text>
+        <text x="234" y="329" text-anchor="middle" font-size="10" fill="#7d8590" font-family="Noto Sans KR, Noto Color Emoji, sans-serif">10~40분 동적</text>
+      </g>
+      <g class="an lit" id="an-al" style="--glow-col:#f85149">
+        <rect x="318" y="270" width="150" height="68" rx="10" fill="#0d1117" stroke="#f85149" stroke-width="2"/>
+        <text x="393" y="293" text-anchor="middle" font-size="20" font-family="Noto Sans KR, Noto Color Emoji, sans-serif">🔔</text>
+        <text x="393" y="313" text-anchor="middle" font-size="12" fill="#f85149" font-family="Noto Sans KR, Noto Color Emoji, sans-serif" font-weight="700">Alert / TTS</text>
+        <text x="393" y="329" text-anchor="middle" font-size="10" fill="#7d8590" font-family="Noto Sans KR, Noto Color Emoji, sans-serif">히스테리시스 · MeloTTS</text>
+      </g>
+      <g class="an lit" id="an-lm" style="--glow-col:#f0883e">
+        <rect x="482" y="270" width="150" height="68" rx="10" fill="#0d1117" stroke="#f0883e" stroke-width="2"/>
+        <text x="557" y="293" text-anchor="middle" font-size="20" font-family="Noto Sans KR, Noto Color Emoji, sans-serif">💬</text>
+        <text x="557" y="313" text-anchor="middle" font-size="12" fill="#f0883e" font-family="Noto Sans KR, Noto Color Emoji, sans-serif" font-weight="700">LLMCoach</text>
+        <text x="557" y="329" text-anchor="middle" font-size="10" fill="#7d8590" font-family="Noto Sans KR, Noto Color Emoji, sans-serif">gemma4:26b · 코칭</text>
+      </g>
+
+      <!-- Docker 노드 -->
+      <g class="an lit" id="an-ol" style="--glow-col:#f0883e">
+        <rect x="672" y="30" width="378" height="68" rx="10" fill="#0d1117" stroke="#f0883e" stroke-width="2"/>
+        <text x="861" y="53" text-anchor="middle" font-size="20" font-family="Noto Sans KR, Noto Color Emoji, sans-serif">🧠</text>
+        <text x="861" y="73" text-anchor="middle" font-size="13" fill="#f0883e" font-family="Noto Sans KR, Noto Color Emoji, sans-serif" font-weight="700">Ollama :11434</text>
+        <text x="861" y="88" text-anchor="middle" font-size="10" fill="#7d8590" font-family="Noto Sans KR, Noto Color Emoji, sans-serif">gemma4:e4b (AIJudge) · gemma4:26b (LLMCoach)</text>
+      </g>
+      <g class="an lit" id="an-db" style="--glow-col:#39d353">
+        <rect x="672" y="146" width="170" height="68" rx="10" fill="#0d1117" stroke="#39d353" stroke-width="2"/>
+        <text x="757" y="169" text-anchor="middle" font-size="20" font-family="Noto Sans KR, Noto Color Emoji, sans-serif">🗄️</text>
+        <text x="757" y="189" text-anchor="middle" font-size="13" fill="#39d353" font-family="Noto Sans KR, Noto Color Emoji, sans-serif" font-weight="700">MySQL 8.0</text>
+        <text x="757" y="205" text-anchor="middle" font-size="10" fill="#7d8590" font-family="Noto Sans KR, Noto Color Emoji, sans-serif">:3307 · 감지/피로 로그</text>
+      </g>
+      <g class="an lit" id="an-dj" style="--glow-col:#58a6ff">
+        <rect x="854" y="146" width="196" height="68" rx="10" fill="#0d1117" stroke="#58a6ff" stroke-width="2"/>
+        <text x="952" y="169" text-anchor="middle" font-size="20" font-family="Noto Sans KR, Noto Color Emoji, sans-serif">🌐</text>
+        <text x="952" y="189" text-anchor="middle" font-size="13" fill="#58a6ff" font-family="Noto Sans KR, Noto Color Emoji, sans-serif" font-weight="700">Django :8000</text>
+        <text x="952" y="205" text-anchor="middle" font-size="10" fill="#7d8590" font-family="Noto Sans KR, Noto Color Emoji, sans-serif">실시간 대시보드</text>
+      </g>
+      <g class="an lit" id="an-df" style="--glow-col:#39d353">
+        <rect x="672" y="270" width="378" height="68" rx="10" fill="#0d1117" stroke="#39d353" stroke-width="2"/>
+        <text x="861" y="293" text-anchor="middle" font-size="20" font-family="Noto Sans KR, Noto Color Emoji, sans-serif">📁</text>
+        <text x="861" y="313" text-anchor="middle" font-size="13" fill="#39d353" font-family="Noto Sans KR, Noto Color Emoji, sans-serif" font-weight="700">data/ 공유 파일</text>
+        <text x="861" y="329" text-anchor="middle" font-size="10" fill="#7d8590" font-family="Noto Sans KR, Noto Color Emoji, sans-serif">realtime_status.json · cmd.json · calibration.json</text>
+      </g>
+
+      <!-- 화살표 -->
+      <line class="aa" id="aa-1" x1="140" y1="64" x2="150" y2="64" stroke="#58a6ff" stroke-width="2.5" marker-end="url(#mb)"/>
+      <line class="aa" id="aa-2" x1="282" y1="64" x2="292" y2="64" stroke="#58a6ff" stroke-width="2.5" marker-end="url(#mb)"/>
+      <path class="aa" id="aa-3" d="M342 98 L342 106 L80 106 L80 128" fill="none" stroke="#39d353" stroke-width="2" marker-end="url(#mt)"/>
+      <path class="aa" id="aa-4" d="M373 98 L373 106 L232 106 L232 108" fill="none" stroke="#3fb950" stroke-width="2" marker-end="url(#mg)"/>
+      <path class="aa" id="aa-5" d="M404 98 L404 106 L232 106 L232 192" fill="none" stroke="#bc8cff" stroke-width="2" marker-end="url(#mp2)"/>
+      <path class="aa" id="aa-6" d="M150 163 L162 143" fill="none" stroke="#39d353" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#mt)"/>
+      <path class="aa" id="aa-7" d="M300 144 L308 144 L308 176 L316 176" fill="none" stroke="#3fb950" stroke-width="2.5" marker-end="url(#mg)"/>
+      <path class="aa" id="aa-8" d="M300 226 L308 226 L308 190 L316 190" fill="none" stroke="#bc8cff" stroke-width="2.5" marker-end="url(#mp2)"/>
+      <line class="aa" id="aa-9" x1="468" y1="180" x2="478" y2="180" stroke="#f0883e" stroke-width="2.5" marker-end="url(#mo)"/>
+      <path class="aa" id="aa-10" d="M555 146 A92 38 0 0 0 391 146" fill="none" stroke="#f0883e" stroke-width="1.5" stroke-dasharray="6 3" marker-end="url(#mo)"/>
+      <path class="aa" id="aa-11" d="M632 165 L650 165 L650 76 L670 76" fill="none" stroke="#f0883e" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#mo)"/>
+      <path class="aa" id="aa-12" d="M316 184 L278 184 L278 254 L80 254 L80 270" fill="none" stroke="#f0883e" stroke-width="2" marker-end="url(#mo)"/>
+      <path class="aa" id="aa-13" d="M391 214 L391 268" fill="none" stroke="#f85149" stroke-width="2" marker-end="url(#mr)"/>
+      <line class="aa" id="aa-14" x1="152" y1="304" x2="162" y2="304" stroke="#f85149" stroke-width="2.5" marker-end="url(#mr)"/>
+      <line class="aa" id="aa-15" x1="306" y1="304" x2="316" y2="304" stroke="#f85149" stroke-width="2" marker-end="url(#mr)"/>
+      <path class="aa" id="aa-16" d="M306 318 L464 318 L464 318 L480 318" fill="none" stroke="#f0883e" stroke-width="1.5" marker-end="url(#mo)"/>
+      <path class="aa" id="aa-17" d="M557 270 L557 236 L650 236 L650 96 L670 96" fill="none" stroke="#f0883e" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#mo)"/>
+      <path class="aa" id="aa-18" d="M80 340 L80 354 L648 354 L648 176 L670 176" fill="none" stroke="#39d353" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#mt)"/>
+      <line class="aa" id="aa-19" x1="844" y1="180" x2="852" y2="180" stroke="#39d353" stroke-width="2" marker-end="url(#mt)"/>
+      <path class="aa" id="aa-20" d="M952 216 L952 248 L861 248 L861 268" fill="none" stroke="#58a6ff" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#mb)"/>
+    </svg>
+
+    <!-- 스텝 바 -->
+    <div id="step-bar">
+      <span id="step-badge">① 입력</span>
+      <span id="step-desc">설명 로드 중...</span>
+      <div class="step-dots" id="step-dots"></div>
+      <div id="step-ctrl">
+        <button onclick="stepGo(-1)">◀</button>
+        <button id="play-btn" onclick="togglePlay()">⏸ 일시정지</button>
+        <button onclick="stepGo(1)">▶</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ S8 기술 스택 ══ -->
+<div class="slide" id="s8">
+  <h2>기술 스택</h2>
+  <p class="sub">임베디드 · AI · 웹이 결합된 풀스택 구성</p>
+  <div class="stack-grid">
+    <div class="scard"><div class="scat">얼굴 분석</div><div class="sitems"><span class="sitem" style="color:var(--green)">MediaPipe</span><span class="sitem" style="color:var(--blue)">OpenCV</span><span class="sitem" style="color:var(--muted)">solvePnP</span></div></div>
+    <div class="scard" style="transition-delay:.08s"><div class="scat">AI / LLM</div><div class="sitems"><span class="sitem" style="color:var(--orange)">Ollama</span><span class="sitem" style="color:var(--orange)">gemma4:e4b</span><span class="sitem" style="color:var(--orange)">gemma4:26b</span></div></div>
+    <div class="scard" style="transition-delay:.16s"><div class="scat">TTS</div><div class="sitems"><span class="sitem" style="color:var(--purple)">MeloTTS</span><span class="sitem" style="color:var(--muted)">PowerShell</span><span class="sitem" style="color:var(--muted)">WSL2 Bridge</span></div></div>
+    <div class="scard" style="transition-delay:.24s"><div class="scat">웹 / DB</div><div class="sitems"><span class="sitem" style="color:var(--blue)">Django 4</span><span class="sitem" style="color:var(--green)">MySQL 8.0</span><span class="sitem" style="color:var(--yellow)">Chart.js</span></div></div>
+    <div class="scard" style="transition-delay:.32s"><div class="scat">인프라</div><div class="sitems"><span class="sitem" style="color:var(--blue)">Docker</span><span class="sitem" style="color:var(--teal)">WSL2</span><span class="sitem" style="color:var(--muted)">usbipd-win</span></div></div>
+    <div class="scard" style="transition-delay:.40s"><div class="scat">카메라</div><div class="sitems"><span class="sitem" style="color:var(--blue)">ffmpeg</span><span class="sitem" style="color:var(--muted)">V4L2</span><span class="sitem" style="color:var(--muted)">MJPEG</span></div></div>
+  </div>
+  <div style="margin-top:40px;text-align:center;color:var(--muted);font-size:1rem">
+  </div>
+</div>
+
+</div><!-- /deck -->
+
+<!-- 네비 -->
+<div id="nav">
+  <button id="btn-prev" onclick="go(-1)">&#8592;</button>
+  <div class="dots" id="dots"></div>
+  <button id="btn-next" onclick="go(1)">&#8594;</button>
+  <span id="slide-num">1 / 8</span>
+</div>
+<div id="hint">← → 키 또는 클릭</div>
+
+<script>
+const TOTAL = 8;
+let cur = 0;
+let scoreTimer = null, pomoTimer = null;
+
+// ── 도트 생성 ──────────────────────────────
+const dotsEl = document.getElementById('dots');
+for(let i=0;i<TOTAL;i++){
+  const d=document.createElement('div');
+  d.className='dot'+(i===0?' active':'');
+  d.onclick=()=>goTo(i);
+  dotsEl.appendChild(d);
+}
+
+// ── 슬라이드 이동 ──────────────────────────
+function go(dir){ goTo(cur+dir); }
+function goTo(n){
+  if(n<0||n>=TOTAL) return;
+  cur=n;
+  document.getElementById('deck').style.transform=`translateX(-${cur*100}vw)`;
+  document.querySelectorAll('.dot').forEach((d,i)=>d.classList.toggle('active',i===cur));
+  document.getElementById('slide-num').textContent=`${cur+1} / ${TOTAL}`;
+  onEnter(cur);
+}
+
+// ── 키보드 ────────────────────────────────
+document.addEventListener('keydown',e=>{
+  if(e.key==='ArrowRight'||e.key==='ArrowDown') go(1);
+  if(e.key==='ArrowLeft'||e.key==='ArrowUp') go(-1);
+});
+
+// ── 터치 스와이프 ─────────────────────────
+let tx=0;
+document.addEventListener('touchstart',e=>tx=e.touches[0].clientX,{passive:true});
+document.addEventListener('touchend',e=>{
+  const dx=e.changedTouches[0].clientX-tx;
+  if(Math.abs(dx)>50) go(dx<0?1:-1);
+},{passive:true});
+
+// ══════════════════════════════════════════
+//  슬라이드 진입 애니메이션
+// ══════════════════════════════════════════
+const entered=new Set();
+function onEnter(i){
+  if(entered.has(i)) return;
+  entered.add(i);
+  switch(i){
+    case 1: animS2(); break;
+    case 2: animS3(); break;
+    case 3: animS4(); break;
+    case 4: animS5(); break;
+    case 5: animS6(); break;
+    case 6: animS7(); break;
+    case 7: animS8(); break;
+  }
+}
+
+// ── S2 문제 카드 ───────────────────────────
+function animS2(){
+  document.querySelectorAll('#s2 .pcard').forEach((el,i)=>{
+    setTimeout(()=>el.classList.add('in'),i*150+100);
+  });
+}
+
+// ── S3 파이프라인 ──────────────────────────
+function animS3(){
+  // 단계 순차 등장
+  ['ps1','ps2','ps3','ps4','ps5'].forEach((id,i)=>{
+    setTimeout(()=>{
+      const el=document.getElementById(id);
+      if(el) el.classList.add('in');
+    }, i*180+100);
+  });
+  // 화살표는 단계 등장 후 나타남
+  ['pa1','pa2','pa3','pa4'].forEach((id,i)=>{
+    setTimeout(()=>{
+      const el=document.getElementById(id);
+      if(el) el.classList.add('in');
+    }, i*180+280);
+  });
+  // AIJudge 피드백 배지
+  setTimeout(()=>{
+    const fb=document.getElementById('fb-badge');
+    if(fb) fb.style.opacity='1';
+  }, 1200);
+}
+
+// ── S4 졸음 점수 데모 ──────────────────────
+function animS4(){
+  document.querySelectorAll('#s4 .lrow').forEach((el,i)=>{
+    setTimeout(()=>el.classList.add('in'),i*130+200);
+  });
+  const demos=[
+    {ear:65,mar:20,head:30},
+    {ear:82,mar:55,head:72},
+    {ear:28,mar:10,head:14},
+    {ear:92,mar:42,head:85},
+  ];
+  let di=0;
+  function run(){
+    const d=demos[di%demos.length]; di++;
+    const raw=0.50*d.ear+0.25*d.mar+0.25*d.head;
+    const curved=Math.min(100,Math.pow(raw,1.5)/10);
+    document.getElementById('bear').style.width=d.ear+'%';
+    document.getElementById('bmar').style.width=d.mar+'%';
+    document.getElementById('bhead').style.width=d.head+'%';
+    document.getElementById('btotal').style.width=curved+'%';
+    document.getElementById('vear').textContent=d.ear;
+    document.getElementById('vmar').textContent=d.mar;
+    document.getElementById('vhead').textContent=d.head;
+    document.getElementById('vtotal').textContent=Math.round(curved);
+    document.getElementById('garc').style.strokeDashoffset=283*(1-curved/100);
+    document.getElementById('gnum').textContent=Math.round(curved);
+    const lv=curved<=20?0:curved<=45?1:curved<=65?2:3;
+    ['lv0','lv1','lv2','lv3'].forEach((id,i)=>document.getElementById(id).classList.toggle('active',i===lv));
+    scoreTimer=setTimeout(run,2200);
+  }
+  setTimeout(run,600);
+}
+
+// ── S5 포모도로 데모 ───────────────────────
+function animS5(){
+  document.querySelectorAll('#s5 .ibar-fill').forEach(el=>{
+    setTimeout(()=>el.style.width=el.dataset.w+'%',500);
+  });
+  let sec=35*60; const total=40*60; const circ=735;
+  const ring=document.getElementById('pring');
+  const tEl=document.getElementById('ptime');
+  const stEl=document.getElementById('pst');
+  const lbEl=document.getElementById('plbl');
+  function tick(){
+    if(sec<0){
+      // 휴식 전환
+      sec=5*60; ring.style.stroke='#3fb950';
+      stEl.textContent='휴식 중'; lbEl.textContent='휴식 5분 — 눈 피로 해소';
+      setTimeout(()=>{
+        sec=35*60; ring.style.stroke='#58a6ff';
+        stEl.textContent='집중 중'; lbEl.textContent='작업 1 · 40분 인터벌';
+      },7000);
+    }
+    const m=String(Math.floor(sec/60)).padStart(2,'0');
+    const s=String(sec%60).padStart(2,'0');
+    tEl.textContent=`${m}:${s}`;
+    ring.style.strokeDashoffset=circ*((total-sec)/total);
+    sec--;
+  }
+  pomoTimer=setInterval(tick,1000);
+}
+
+// ── S6 개인화 ─────────────────────────────
+function animS6(){
+  document.querySelectorAll('#s6 .fcard').forEach((el,i)=>{
+    setTimeout(()=>el.classList.add('in'),i*120+100);
+  });
+}
+
+// ══════════════════════════════════════════
+//  S7 아키텍처 — 스텝별 흐름 애니메이션
+// ══════════════════════════════════════════
+
+// 7단계 정의: 활성 노드 / 활성 화살표 / 배지 색 / 설명
+const STEPS = [
+  {
+    badge:'① 카메라 캡처', color:'#58a6ff',
+    nodes:['an-cam','an-ff'],
+    arrows:['aa-1','aa-2'],
+    desc:'<b>웹캠</b>이 MJPEG 영상을 캡처하면 <b>ffmpeg</b>가 BGR 프레임으로 변환해 파이프로 전달합니다 (640×480 · 30fps)'
+  },
+  {
+    badge:'② 얼굴 감지', color:'#3fb950',
+    nodes:['an-mp'],
+    arrows:['aa-2','aa-3','aa-4','aa-5'],
+    desc:'<b>MediaPipe FaceLandmarker</b>가 468개 랜드마크를 검출합니다. 신뢰도 임계값 0.3으로 고개를 숙여도 감지합니다'
+  },
+  {
+    badge:'③ 개인 캘리브', color:'#39d353',
+    nodes:['an-cal'],
+    arrows:['aa-3','aa-6'],
+    desc:'세션 초반 <b>30초</b>간 사용자 얼굴 기준값을 자동 측정합니다 (EAR×0.75, MAR×3.0). 결과는 파일로 저장해 재사용합니다'
+  },
+  {
+    badge:'④ 생체 분석', color:'#bc8cff',
+    nodes:['an-ear','an-hp'],
+    arrows:['aa-4','aa-5','aa-7','aa-8'],
+    desc:'<b>EAR/MAR</b>로 눈 감김(PERCLOS 60s)과 하품(0.8s 지속)을, <b>Head Pose</b>로 고개 숙임(Pitch/Roll)을 점수화합니다'
+  },
+  {
+    badge:'⑤ 졸음 점수', color:'#f0883e',
+    nodes:['an-jg','an-ai','an-ol'],
+    arrows:['aa-7','aa-8','aa-9','aa-10','aa-11'],
+    desc:'<b>Judge</b>가 W1=0.5·W2=0.25·W3=0.25로 합산 후 x^1.5/10·EMA 적용합니다. <b>AIJudge</b>(gemma4:e4b)가 5초마다 보정합니다'
+  },
+  {
+    badge:'⑥ 피로 판단', color:'#f85149',
+    nodes:['an-fm','an-pm'],
+    arrows:['aa-12','aa-13','aa-14','aa-15'],
+    desc:'<b>FatigueManager</b>가 연속작업·졸음빈도로 피로 4단계를 산출합니다. <b>Pomodoro</b>가 10~40분 동적 인터벌로 조정합니다'
+  },
+  {
+    badge:'⑦ 경보 · 기록', color:'#39d353',
+    nodes:['an-al','an-lm','an-db','an-dj','an-df'],
+    arrows:['aa-15','aa-16','aa-17','aa-18','aa-19','aa-20'],
+    desc:'<b>Alert</b>·<b>LLMCoach</b>(gemma4:26b)로 TTS 경보·코칭을 출력합니다. 감지 데이터는 <b>MySQL→Django 대시보드</b>로 저장됩니다'
+  },
+];
+
+let s7Step = 0;
+let s7Timer = null;
+let s7Playing = true;
+const ALL_NODES = ['an-cam','an-ff','an-mp','an-cal','an-ear','an-hp',
+                   'an-jg','an-ai','an-fm','an-pm','an-al','an-lm',
+                   'an-ol','an-db','an-dj','an-df'];
+const ALL_ARROWS = Array.from({length:20},(_,i)=>'aa-'+(i+1));
+
+function s7SetStep(n){
+  s7Step = (n + STEPS.length) % STEPS.length;
+  const st = STEPS[s7Step];
+
+  // 모든 노드 dim, 활성만 lit+glow
+  ALL_NODES.forEach(id=>{
+    const el=document.getElementById(id);
+    if(!el) return;
+    el.classList.remove('lit','dim','glow');
+    if(st.nodes.includes(id)){
+      el.classList.add('lit','glow');
+      el.style.setProperty('--glow-col', st.color);
+    } else {
+      el.classList.add('dim');
+    }
+  });
+
+  // 모든 화살표 dim, 활성만 lit+flow
+  ALL_ARROWS.forEach(id=>{
+    const el=document.getElementById(id);
+    if(!el) return;
+    el.classList.remove('lit','dim','flow');
+    if(st.arrows.includes(id)){
+      el.classList.add('lit','flow');
+    } else {
+      el.classList.add('dim');
+    }
+  });
+
+  // 배지 + 설명 업데이트
+  const badge=document.getElementById('step-badge');
+  const desc=document.getElementById('step-desc');
+  if(badge){ badge.textContent=st.badge; badge.style.background=st.color+'22'; badge.style.color=st.color; }
+  if(desc) desc.innerHTML = st.desc;
+
+  // 스텝 도트 업데이트
+  document.querySelectorAll('#step-dots .sdot').forEach((d,i)=>d.classList.toggle('on',i===s7Step));
+  if(badge){ badge.style.borderLeft='3px solid '+st.color; badge.style.paddingLeft='10px'; badge.style.borderRadius='0 20px 20px 0'; }
+}
+
+function stepGo(dir){ s7SetStep(s7Step+dir); }
+
+function togglePlay(){
+  s7Playing=!s7Playing;
+  const btn=document.getElementById('play-btn');
+  if(btn) btn.textContent = s7Playing ? '⏸ 일시정지' : '▶ 재생';
+  if(s7Playing && s7Timer===null) s7StartAuto();
+}
+
+function s7StartAuto(){
+  s7Timer=setInterval(()=>{
+    if(!s7Playing){ clearInterval(s7Timer); s7Timer=null; return; }
+    s7SetStep(s7Step+1);
+  }, 3200);
+}
+
+function animS7(){
+  // 스텝 도트 생성
+  const dotsC=document.getElementById('step-dots');
+  if(dotsC && dotsC.children.length===0){
+    STEPS.forEach((_,i)=>{
+      const d=document.createElement('div');
+      d.className='sdot'+(i===0?' on':'');
+      d.onclick=()=>{ s7SetStep(i); };
+      dotsC.appendChild(d);
+    });
+  }
+  // 첫 스텝 표시
+  s7SetStep(0);
+  // 자동 재생 시작
+  s7Playing=true;
+  if(s7Timer) clearInterval(s7Timer);
+  s7StartAuto();
+}
+
+// ── S8 스택 ───────────────────────────────
+function animS8(){
+  document.querySelectorAll('#s8 .scard').forEach((el,i)=>{
+    setTimeout(()=>el.classList.add('in'),i*90+100);
+  });
+}
+
+// 초기 S1은 즉시 표시 (눈 애니메이션만)
+</script>
+</body>
+</html>

@@ -1,5 +1,5 @@
 """
-AI 기반 학습 피로 관리 시스템
+AI 개인 맞춤형 포모도로 타이머
 메인 실행 파일
 
 실행: python main.py
@@ -15,6 +15,9 @@ import select
 HEADLESS = 'DISPLAY' not in os.environ and sys.platform != 'win32'
 if HEADLESS:
     os.environ['OPENCV_VIDEOIO_PRIORITY_MSMF'] = '0'
+    # Qt GUI 백엔드 비활성화 — QFontDatabase 경고 억제
+    os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
+    os.environ.setdefault('QT_LOGGING_RULES', '*.debug=false;qt.qpa.*=false')
     print('[system] 헤드리스 모드 (GUI 없음, q+Enter 또는 Ctrl+C로 종료)')
 
 
@@ -145,9 +148,31 @@ def main():
         target_min = max(10, int(optimal["avg_min"] * 0.85))
         pomodoro.set_personal_base_min(target_min)
 
+    # 사용자 프로필 로드 (이름)
+    _profile_path = os.path.join(config.BASE_DIR, "data", "user_profile.json")
+    _user_name = ""
+    try:
+        import json as _json_profile
+        with open(_profile_path, encoding="utf-8") as _pf:
+            _user_name = _json_profile.load(_pf).get("name", "").strip()
+    except Exception:
+        pass
+
+    def _call(name: str) -> str:
+        """성 제외 이름만 사용. '박지호' → '지호님, '"""
+        if not name:
+            return ""
+        first_name = name[1:] if len(name) >= 2 else name
+        return first_name + "님, "
+
+    _call_name = _call(_user_name)   # ex) "지호님, "
+
+    # alert 모듈에 이름 전달 (경보 문구에 이름 삽입)
+    alert_controller.set_user_name(_user_name)
+
     # 시작 안내 TTS (재생 완료 후 측정 시작)
     print("[main] 시작 안내 음성 출력 중...")
-    voice.speak_and_wait("AI 학습 피로 관리 시스템을 시작합니다. 카메라를 바라봐 주세요.")
+    voice.speak_and_wait(f"{_call_name}AI 개인 맞춤형 포모도로 타이머를 시작합니다. 카메라를 바라봐 주세요.")
 
     print("[main] 'q' 키를 눌러 종료")
     print()
@@ -158,6 +183,7 @@ def main():
     frame_count = 0
     drowsiness_score = 0.0   # 첫 프레임 rule_score 참조 전 초기화
     _last_head_score = 0     # 얼굴 미검출 시 직전 head_score 유지용
+    _no_face_start: float | None = None  # 연속 얼굴 미검출 시작 시각
 
     # 실시간 상태 공유 파일 경로 (Docker 볼륨 마운트 경로와 일치)
     STATUS_FILE = os.path.join(config.BASE_DIR, "data", "realtime_status.json")
@@ -189,9 +215,22 @@ def main():
             if landmarks is None:
                 # 얼굴 미검출 — AI 판정 결과도 무효화
                 ai_judge.reset()
-                if face_detector.is_no_face_alert():
+                if _no_face_start is None:
+                    _no_face_start = current_time
+                no_face_duration = current_time - _no_face_start
+
+                # 2초 초과 시: 고개 완전 떨굼(눈 감김 + 머리 숙임)으로 간주해 점수 상승
+                # 2→7초 구간에서 ear_score 0→100으로 선형 증가
+                if no_face_duration > 2.0:
+                    nf_ear_score = min(100.0, (no_face_duration - 2.0) * 20.0)
+                    drowsiness_score = judge.calculate_drowsiness_score(
+                        nf_ear_score, 0, 100
+                    )
+
+                if face_detector.is_no_face_alert() and pomodoro.state != pomodoro.BREAK:
                     alert_controller.set_alert_level(3)
             else:
+                _no_face_start = None
                 # 3. EAR 계산 (눈 감김)
                 left_eye, right_eye = face_detector.get_eye_landmarks(landmarks, frame.shape)
                 ear_left = calculate_ear(left_eye)
@@ -214,8 +253,8 @@ def main():
                 head_score = head_pose_estimator.get_head_score(pitch, yaw, roll)
                 _last_head_score = head_score  # 다음 프레임 미검출 대비 저장
 
-                # 랜드마크 그리기 (디버깅용)
-                frame = face_detector.draw_landmarks(frame, landmarks)
+                # 랜드마크 그리기 (디버깅용) — 비활성화
+                # frame = face_detector.draw_landmarks(frame, landmarks)
 
                 # 캘리브레이션 (세션 초반 30초)
                 if not calibrator.done:
@@ -226,15 +265,16 @@ def main():
                             calibrator.mar_threshold,
                         )
 
-                # AI 판정 요청 (비동기, 5초 주기) — 규칙 기반 점수를 앵커로 전달
-                ai_judge.request({
-                    "ear": ear_value,
-                    "mar": mar_value,
-                    "pitch": pitch,
-                    "yaw": yaw,
-                    "ear_closed_sec": drowsiness_tracker.get_ear_closed_seconds(),
-                    "yawn_count": drowsiness_tracker.get_yawn_count(),
-                }, rule_score=drowsiness_score)
+                # AI 판정 요청 (비동기, 5초 주기) — 캘리브레이션 완료 후에만 시작
+                if calibrator.done:
+                    ai_judge.request({
+                        "ear": ear_value,
+                        "mar": mar_value,
+                        "pitch": pitch,
+                        "yaw": yaw,
+                        "ear_closed_sec": drowsiness_tracker.get_ear_closed_seconds(),
+                        "yawn_count": drowsiness_tracker.get_yawn_count(),
+                    }, rule_score=drowsiness_score)
 
             # 6. 종합 졸음 점수 산출 (얼굴 미검출 시 이전 점수 유지)
             if landmarks is not None:
@@ -255,8 +295,10 @@ def main():
                 alert_level = judge.get_alert_level(drowsiness_score)
 
             # 얼굴 미검출 경고가 아닌 경우에만 졸음 기반 경고 (히스테리시스 적용)
-            if landmarks is not None or not face_detector.is_no_face_alert():
-                alert_controller.update(drowsiness_score, alert_level)
+            # 휴식 중에는 경고 억제
+            if pomodoro.state != pomodoro.BREAK:
+                if landmarks is not None or not face_detector.is_no_face_alert():
+                    alert_controller.update(drowsiness_score, alert_level)
 
             # 8. 피로도 업데이트
             fatigue_manager.update(drowsiness_score, alert_level)
@@ -271,7 +313,7 @@ def main():
                     fatigue_status['fatigue_score'], drowsiness_score
                 )
                 voice.speak(
-                    f"포모도로 시작. {start_ev['planned_min']}분 집중해볼까요?"
+                    f"{_call_name}타이머 시작. {start_ev['planned_min']}분 집중해볼까요?"
                 )
 
             # ── 작업 중: 휴식 필요 여부 확인
@@ -299,10 +341,10 @@ def main():
 
                     # TTS 안내
                     forced = pomo_ev.get('forced', False)
-                    tts_msg = (
-                        f"{'위험 수준! ' if forced else ''}"
-                        f"휴식 시간입니다. {break_ev['break_min']}분 쉬어갑니다."
-                    )
+                    if forced:
+                        tts_msg = f"{_call_name}위험 수준! 휴식 시간입니다. {break_ev['break_min']}분 쉬어가세요."
+                    else:
+                        tts_msg = f"{_call_name}휴식 시간입니다. {break_ev['break_min']}분 쉬어갑니다."
                     voice.speak(tts_msg)
 
                     # LLM 개인화 코칭 요청
@@ -327,7 +369,7 @@ def main():
                         fatigue_status['fatigue_score'], drowsiness_score
                     )
                     voice.speak(
-                        f"휴식 끝! {done_ev['cycle']}번째 사이클 완료. "
+                        f"{_call_name}휴식 끝! {done_ev['cycle']}번째 사이클 완료. "
                         f"다음 작업은 {next_ev['planned_min']}분입니다."
                     )
 
@@ -341,7 +383,10 @@ def main():
                     if _cmd.get("cmd") == "pomo_reset":
                         pomodoro.reset()
                         fatigue_manager.reset_work_timer()
-                        voice.speak("포모도로 타이머를 초기화했습니다.")
+                        voice.speak(f"{_call_name}포모도로 타이머를 초기화했습니다.")
+                    elif _cmd.get("cmd") == "calib_reset":
+                        calibrator.reset()
+                        voice.speak(f"{_call_name}캘리브레이션을 초기화했습니다. 카메라를 바라봐 주세요.")
             except Exception:
                 pass
 
@@ -368,6 +413,9 @@ def main():
                         "pitch": round(pitch, 1),
                         "yaw": round(yaw, 1),
                         "face_detected": landmarks is not None,
+                        "calib_done": calibrator.done,
+                        "calib_ear": round(calibrator.ear_threshold, 3),
+                        "calib_mar": round(calibrator.mar_threshold, 3),
                         "pomo": pomodoro.get_status(),
                     }
                     with open(STATUS_FILE, "w") as _f:
@@ -438,8 +486,7 @@ def main():
                     break
                 time.sleep(0.03)  # CPU 부하 방지
             else:
-                # GUI 모드: 화면에 정보 오버레이
-                frame = draw_info(frame, display_data)
+                # GUI 모드: 화면 표시 (오버레이 없이 원본 프레임)
                 cv2.imshow('Drowsiness Detection', frame)
 
                 # 종료 키
@@ -459,14 +506,13 @@ def main():
         except Exception:
             pass
 
-        # 포모도로 타이머 종료 안내
+        # 포모도로 타이머 종료 안내 (비동기 — 블로킹 없이 큐에만 넣음)
         if pomodoro.state != pomodoro.IDLE:
             pomodoro.reset()
-            voice.speak_and_wait("프로그램을 종료합니다.")
+            voice.speak(f"{_call_name}프로그램을 종료합니다.")
 
         # 리소스 해제
         print("[main] 리소스 해제 중...")
-        voice.stop()
         camera.release()
         face_detector.release()
         alert_controller.cleanup()
@@ -474,6 +520,9 @@ def main():
         if not HEADLESS:
             cv2.destroyAllWindows()
         print("[main] 시스템 종료 완료")
+        # 백그라운드 스레드(TTS·LLM 등)가 남아 프로그램이 멈추는 걸 방지
+        import sys as _sys
+        _sys.exit(0)
 
 
 if __name__ == '__main__':

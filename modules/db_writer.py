@@ -72,10 +72,6 @@ class DBWriter:
                 - head_yaw (float)
                 - drowsiness_score (int)
                 - alert_level (int)
-                - co2_ppm (int)
-                - temperature (float)
-                - humidity (float)
-                - env_score (int)
         """
         self._ensure_connection()
         if self._conn is None:
@@ -85,9 +81,9 @@ class DBWriter:
         sql = """
             INSERT INTO detection_logs
                 (detected_at, ear_value, mar_value, head_pitch, head_yaw,
-                 drowsiness_score, alert_level, co2_ppm, temperature, humidity, env_score)
+                 drowsiness_score, alert_level)
             VALUES
-                (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                (%s, %s, %s, %s, %s, %s, %s)
         """
         try:
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -99,10 +95,6 @@ class DBWriter:
                 data_dict.get("head_yaw", 0.0),
                 data_dict.get("drowsiness_score", 0),
                 data_dict.get("alert_level", 0),
-                data_dict.get("co2_ppm", 0),
-                data_dict.get("temperature", 0.0),
-                data_dict.get("humidity", 0.0),
-                data_dict.get("env_score", 0),
             )
             with self._conn.cursor() as cursor:
                 cursor.execute(sql, params)
@@ -120,7 +112,6 @@ class DBWriter:
                 - fatigue_score (int)
                 - continuous_work_min (int)
                 - drowsy_count_30min (int)
-                - env_stress_score (int)
                 - fatigue_level (str)
         """
         self._ensure_connection()
@@ -131,9 +122,9 @@ class DBWriter:
         sql = """
             INSERT INTO fatigue_logs
                 (logged_at, fatigue_score, continuous_work_min,
-                 drowsy_count_30min, env_stress_score, fatigue_level)
+                 drowsy_count_30min, fatigue_level)
             VALUES
-                (%s, %s, %s, %s, %s, %s)
+                (%s, %s, %s, %s, %s)
         """
         try:
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -142,7 +133,6 @@ class DBWriter:
                 data_dict.get("fatigue_score", 0),
                 data_dict.get("continuous_work_min", 0),
                 data_dict.get("drowsy_count_30min", 0),
-                data_dict.get("env_stress_score", 0),
                 data_dict.get("fatigue_level", "good"),
             )
             with self._conn.cursor() as cursor:

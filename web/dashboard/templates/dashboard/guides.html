@@ -1,0 +1,254 @@
+{% load static guide_tags %}
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>피로 해소 가이드 — AI 포모도로 타이머</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{% static 'css/style.css' %}">
+  <style>
+    .header-nav { display:flex; gap:4px; }
+    .header-nav a {
+      color:rgba(255,255,255,.55); font-size:.82rem; text-decoration:none;
+      padding:5px 12px; border-radius:6px; transition:background .15s, color .15s;
+    }
+    .header-nav a:hover { background:rgba(255,255,255,.1); color:#fff; }
+    .header-nav a.active { background:var(--primary); color:#fff; font-weight:500; }
+
+    /* 탭 */
+    .tab-bar { display:flex; gap:8px; margin-bottom:1.5rem; flex-wrap:wrap; }
+    .tab-btn {
+      padding:8px 20px; border-radius:20px; border:2px solid transparent;
+      background:#f3f4f6; color:#6b7280; font-size:.85rem; font-weight:600;
+      cursor:pointer; transition:all .2s;
+    }
+    .tab-btn:hover { background:#e5e7eb; }
+    .tab-btn.active { color:#fff; border-color:transparent; }
+    .tab-btn[data-level="caution"].active { background:#d29922; }
+    .tab-btn[data-level="warning"].active { background:#f0883e; }
+    .tab-btn[data-level="danger"].active  { background:#f85149; }
+
+    /* 원인 토글 */
+    .cause-bar { display:flex; gap:8px; margin-bottom:1.5rem; align-items:center; }
+    .cause-bar span { font-size:.82rem; color:var(--text-secondary); margin-right:4px; }
+    .cause-btn {
+      padding:6px 16px; border-radius:16px; border:1.5px solid var(--border);
+      background:#fff; color:var(--text-secondary); font-size:.82rem;
+      font-weight:600; cursor:pointer; transition:all .2s;
+    }
+    .cause-btn.active { background:var(--primary); color:#fff; border-color:var(--primary); }
+
+    /* 가이드 그리드 */
+    .guide-grid {
+      display:grid; grid-template-columns:repeat(auto-fill, minmax(300px,1fr));
+      gap:1.2rem;
+    }
+    .guide-card {
+      background:#fff; border-radius:14px; padding:1.4rem 1.2rem;
+      box-shadow:0 1px 4px rgba(0,0,0,.07);
+      border-left:4px solid var(--accent-color, #6366f1);
+      animation: fadeIn .3s ease;
+    }
+    @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+    .guide-header {
+      display:flex; align-items:center; gap:.7rem; margin-bottom:.8rem;
+    }
+    .guide-icon { font-size:1.8rem; line-height:1; }
+    .guide-title { font-size:1rem; font-weight:700; color:#111; }
+    .guide-desc { font-size:.84rem; color:#6b7280; margin-bottom:.9rem; line-height:1.6; }
+    .guide-steps { list-style:none; padding:0; margin:0; }
+    .guide-steps li {
+      display:flex; gap:.6rem; align-items:flex-start;
+      font-size:.84rem; color:#374151; margin-bottom:.5rem; line-height:1.5;
+    }
+    .step-num {
+      min-width:22px; height:22px; border-radius:50%;
+      background:var(--accent-color, #6366f1); color:#fff;
+      font-size:.7rem; font-weight:700;
+      display:flex; align-items:center; justify-content:center;
+      flex-shrink:0; margin-top:1px;
+    }
+    .guide-footer {
+      display:flex; align-items:center; justify-content:space-between;
+      margin-top:.9rem; padding-top:.7rem; border-top:1px solid #f3f4f6;
+    }
+    .guide-duration {
+      font-size:.76rem; color:#9ca3af;
+      display:flex; align-items:center; gap:.3rem;
+    }
+    .guide-badge {
+      font-size:.7rem; font-weight:600; padding:2px 8px; border-radius:10px;
+      background:var(--accent-bg, #ede9fe); color:var(--accent-color, #6366f1);
+    }
+
+    /* 레벨 헤더 */
+    .level-header {
+      display:flex; align-items:center; gap:1rem; margin-bottom:1rem;
+      padding:1rem 1.2rem; border-radius:12px; border-left:5px solid;
+    }
+    .level-header .lh-badge {
+      font-size:1.1rem; font-weight:800; letter-spacing:.03em;
+    }
+    .level-header .lh-score {
+      font-size:.82rem; color:#6b7280;
+    }
+    .level-header .lh-desc {
+      font-size:.84rem; margin-left:auto; color:#374151; font-weight:500;
+    }
+
+    .empty-msg {
+      text-align:center; padding:3rem; color:#9ca3af; font-size:.9rem;
+    }
+
+    /* 색상 변수 */
+    [data-level="caution"] { --accent-color:#d29922; --accent-bg:#fef9c3; }
+    [data-level="warning"] { --accent-color:#f0883e; --accent-bg:#fff7ed; }
+    [data-level="danger"]  { --accent-color:#f85149; --accent-bg:#fef2f2; }
+  </style>
+</head>
+<body>
+  <header style="display:flex;align-items:center;justify-content:space-between;padding:12px 2rem">
+    <div>
+      <h1>AI 개인 맞춤형 포모도로 타이머</h1>
+      <p style="font-size:.8rem;opacity:.6;margin-top:2px">피로 해소 가이드</p>
+    </div>
+    <nav class="header-nav">
+      <a href="/">📊 대시보드</a>
+      <a href="/realtime/">📡 실시간</a>
+      <a href="/guides/" class="active">💊 가이드</a>
+      <a href="/settings/">⚙ 설정</a>
+    </nav>
+  </header>
+
+  <main>
+    <!-- 탭: 피로 단계 선택 -->
+    <div class="tab-bar">
+      {% for level, info in guide_map.items %}
+      <button class="tab-btn {% if forloop.first %}active{% endif %}"
+              data-level="{{ level }}"
+              onclick="selectLevel('{{ level }}')">
+        {{ info.label }} ({{ info.score }})
+      </button>
+      {% endfor %}
+    </div>
+
+    <!-- 원인 선택 -->
+    <div class="cause-bar">
+      <span>주요 원인:</span>
+      <button class="cause-btn active" data-cause="work"  onclick="selectCause('work')">💼 장시간 연속 작업</button>
+      <button class="cause-btn"        data-cause="drowsy" onclick="selectCause('drowsy')">😴 졸음 빈번 감지</button>
+    </div>
+
+    <!-- 레벨 정보 헤더 -->
+    {% for level, info in guide_map.items %}
+    <div id="header-{{ level }}" class="level-header"
+         style="display:{% if forloop.first %}flex{% else %}none{% endif %};
+                border-color:{{ info.color }};
+                background:{{ info.color }}12;"
+         data-level="{{ level }}">
+      <span class="lh-badge" style="color:{{ info.color }}">⚠ {{ info.label }}</span>
+      <span class="lh-score">피로도 {{ info.score }}점 구간</span>
+      <span class="lh-desc">
+        {% if level == "caution" %}집중력 저하 시작 — 가벼운 스트레칭과 환기를 권장합니다.{% endif %}
+        {% if level == "warning" %}피로 축적 진행 — 충분한 휴식과 회복이 필요합니다.{% endif %}
+        {% if level == "danger" %}즉시 휴식 필요 — 작업을 멈추고 회복에 집중하세요.{% endif %}
+      </span>
+    </div>
+    {% endfor %}
+
+    <!-- 가이드 카드 그리드 -->
+    {% for level, info in guide_map.items %}
+    {% for cause_key, cause_guides in info.items %}
+    {% if cause_key == "work" or cause_key == "drowsy" %}
+    <div id="grid-{{ level }}-{{ cause_key }}" class="guide-grid"
+         style="display:{% if forloop.parentloop.first and cause_key == 'work' %}grid{% else %}none{% endif %};"
+         data-level="{{ level }}" data-cause="{{ cause_key }}">
+
+      {% for guide_type in cause_guides %}
+      {% with guide=guides|get_item:guide_type %}
+      {% if guide %}
+      <div class="guide-card" data-level="{{ level }}" style="--accent-color:{{ info.color }}; --accent-bg:{{ info.color }}15;">
+        <div class="guide-header">
+          <span class="guide-icon">
+            {% if guide_type == "eye_rest" %}👁️
+            {% elif guide_type == "stretching" %}🤸
+            {% elif guide_type == "breathing" %}🌬️
+            {% elif guide_type == "ventilation" %}🪟
+            {% elif guide_type == "rest_break" %}🛋️
+            {% elif guide_type == "face_wash" %}💧
+            {% elif guide_type == "hydration" %}💧
+            {% elif guide_type == "posture_correction" %}🪑
+            {% elif guide_type == "caffeine" %}☕
+            {% elif guide_type == "walk" %}🚶
+            {% else %}📋
+            {% endif %}
+          </span>
+          <div>
+            <div class="guide-title">{{ guide.title }}</div>
+          </div>
+        </div>
+        <div class="guide-desc">{{ guide.description }}</div>
+        <ol class="guide-steps">
+          {% for step in guide.steps %}
+          <li>
+            <span class="step-num" style="background:{{ info.color }}">{{ forloop.counter }}</span>
+            <span>{{ step }}</span>
+          </li>
+          {% endfor %}
+        </ol>
+        <div class="guide-footer">
+          <span class="guide-duration">
+            ⏱ {{ guide.duration_sec }}초
+          </span>
+          <span class="guide-badge" style="background:{{ info.color }}18; color:{{ info.color }}">
+            {{ guide_type }}
+          </span>
+        </div>
+      </div>
+      {% endif %}
+      {% endwith %}
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% endfor %}
+    {% endfor %}
+  </main>
+
+  <footer>
+    <p>AI 개인 맞춤형 포모도로 타이머 &copy; 2026</p>
+  </footer>
+
+  <script>
+  let curLevel = '{{ guide_map.keys|first }}';
+  let curCause = 'work';
+
+  function selectLevel(level) {
+    curLevel = level;
+    // 탭 active
+    document.querySelectorAll('.tab-btn').forEach(b =>
+      b.classList.toggle('active', b.dataset.level === level));
+    // 레벨 헤더
+    document.querySelectorAll('.level-header').forEach(h =>
+      h.style.display = h.dataset.level === level ? 'flex' : 'none');
+    showGrid();
+  }
+
+  function selectCause(cause) {
+    curCause = cause;
+    document.querySelectorAll('.cause-btn').forEach(b =>
+      b.classList.toggle('active', b.dataset.cause === cause));
+    showGrid();
+  }
+
+  function showGrid() {
+    document.querySelectorAll('.guide-grid').forEach(g => {
+      g.style.display =
+        g.dataset.level === curLevel && g.dataset.cause === curCause
+          ? 'grid' : 'none';
+    });
+  }
+  </script>
+</body>
+</html>

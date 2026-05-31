@@ -30,16 +30,24 @@ class AlertController:
     def __init__(self, voice=None):
         self._voice = voice
         self._current_level = -1
+        self._call_name = ""   # "지호야, " 형태로 저장
+
+    def set_user_name(self, name: str):
+        """main.py에서 프로필 로드 후 호출. 경보 문구에 이름 삽입."""
+        if not name:
+            self._call_name = ""
+            return
+        first_name = name[1:] if len(name) >= 2 else name
+        self._call_name = first_name + "님, "
 
     def update(self, score: float, level: int):
         """점수와 판정 레벨을 받아 히스테리시스를 적용한 후 경고를 발생시킨다."""
         effective_level = level
 
-        # 레벨이 내려가는 경우: 히스테리시스 임계값을 통과해야만 내림
         if level < self._current_level:
             threshold = self._DOWN_THRESHOLDS.get(self._current_level, 0)
             if score >= threshold:
-                effective_level = self._current_level  # 아직 내리지 않음
+                effective_level = self._current_level
 
         if effective_level == self._current_level:
             return
@@ -51,7 +59,7 @@ class AlertController:
         if self._voice and effective_level > 0:
             phrase = config.ALERT_PHRASES.get(effective_level, "")
             if phrase:
-                self._voice.speak(phrase, priority=True)
+                self._voice.speak(self._call_name + phrase, priority=True)
 
     def set_alert_level(self, level: int):
         """하위 호환용. 점수 없이 레벨만 받는 경우 히스테리시스 미적용."""
@@ -63,7 +71,7 @@ class AlertController:
         if self._voice and level > 0:
             phrase = config.ALERT_PHRASES.get(level, "")
             if phrase:
-                self._voice.speak(phrase, priority=True)
+                self._voice.speak(self._call_name + phrase, priority=True)
 
     def cleanup(self):
         pass

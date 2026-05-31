@@ -27,21 +27,6 @@ class FatigueLog(models.Model):
         db_table = 'fatigue_logs'
 
 
-class RecoveryAction(models.Model):
-    action_at = models.DateTimeField()
-    guide_type = models.CharField(max_length=100, null=True)
-    dominant_cause = models.CharField(max_length=20, null=True)
-    fatigue_before = models.IntegerField(null=True)
-    fatigue_after = models.IntegerField(null=True)
-    drowsiness_before = models.IntegerField(null=True)
-    drowsiness_after = models.IntegerField(null=True)
-    duration_sec = models.IntegerField(null=True)
-    effective = models.BooleanField(default=False)
-
-    class Meta:
-        managed = False
-        db_table = 'recovery_actions'
-
 
 class Setting(models.Model):
     setting_key = models.CharField(max_length=100, unique=True)
